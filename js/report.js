@@ -173,10 +173,12 @@
         if (seq !== listSeq) return; // 已有較新的查詢，舊結果不要蓋掉
         applyLists(d);
         haveLists = true;
+        listsFresh = true;
         listsLoading = false;
       }
 
       var haveLists = false;
+      var listsFresh = false; // 這次開頁後已從伺服器拿到今日清單
       var cachedLists = ctx.cacheGet(listKey());
       if (cachedLists) { applyLists(cachedLists); haveLists = true; }
 
@@ -231,19 +233,31 @@
           editing = null;
           form = emptyForm(ctx.today());
           // 先把這筆放進清單立刻顯示，不必等重新查詢
-          if (rec && rec.visitId && rec.visitDate === ctx.today()) {
+          if (rec && rec.visitId) {
+            var isToday = rec.visitDate === ctx.today();
             var upsert = function (list) {
               var out = list.filter(function (v) { return v.visitId !== rec.visitId; });
-              out.unshift(rec);
+              if (isToday) out.unshift(rec);
               return out;
             };
             myVisits = upsert(myVisits);
             if (isMgr && (!filterId || filterId === rec.staffId)) allVisits = upsert(allVisits);
+            else if (isMgr) allVisits = allVisits.filter(function (v) { return v.visitId !== rec.visitId; });
           }
           render();
           window.scrollTo(0, 0);
-          try { await SD.postVisitToChat(rec, wasEdit); } catch (chatErr) { console.warn(chatErr); }
-          reloadLists().then(render).catch(function (e) { console.warn(e); });
+          // 今日回報總覽：清單已是伺服器最新資料（＋剛送出這筆）就直接用；否則先重新查一次，確保正確
+          var reloaded = false;
+          if (!listsFresh) {
+            try { await reloadLists(); reloaded = true; render(); } catch (e) { console.warn(e); }
+          }
+          var overview = listsFresh ? {
+            me: me,
+            date: ctx.today(),
+            visits: myVisits.filter(function (v) { return v.staffId === me.staffId && v.visitDate === ctx.today(); })
+          } : null;
+          try { await SD.postVisitToChat(rec, wasEdit, overview); } catch (chatErr) { console.warn(chatErr); }
+          if (!reloaded) reloadLists().then(render).catch(function (e) { console.warn(e); });
         } catch (err) {
           banner.textContent = err.message || '送出失敗';
           banner.classList.remove('is-hidden');
@@ -518,6 +532,7 @@
           if (seq !== listSeq) return;
           applyLists(d);
           haveLists = true;
+          listsFresh = true;
           listsLoading = false;
         });
       })();

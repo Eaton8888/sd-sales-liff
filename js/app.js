@@ -1142,8 +1142,10 @@
     try {
       if (MOCK) {
         console.info('[SD] mock：略過 sendMessages，原本會送出：');
-        console.info(JSON.stringify(pack && pack.flex ? pack.flex : pack, null, 2));
-        return { skipped: 'mock' };
+        var mockMsgs = pack && pack.flex ? [pack.flex].concat((pack.extra || []).filter(Boolean)).slice(0, 5) : [pack];
+        console.info(JSON.stringify(mockMsgs.length > 1 ? mockMsgs : mockMsgs[0], null, 2));
+        global.__sdLastSent = mockMsgs; // 測試用
+        return { skipped: 'mock', count: mockMsgs.length };
       }
       try { await liffReady; } catch (e) {}
       var liffObj = global.liff;
@@ -1164,22 +1166,32 @@
         toast('聊天室紀錄未送出（未授權傳訊息）');
         return { skipped: 'no_permission' };
       }
+      var msgs = [pack.flex].concat((pack.extra || []).filter(Boolean)).slice(0, 5); // LINE 一次最多 5 則
       if (typeof liffObj.sendMessages !== 'function') {
         console.warn('[SD] 此環境不支援 sendMessages');
         return { skipped: 'unsupported' };
       }
       try {
-        await liffObj.sendMessages([pack.flex]);
-        return { sent: 'flex' };
+        await liffObj.sendMessages(msgs);
+        return { sent: 'flex', count: msgs.length };
       } catch (firstErr) {
         console.warn('[SD] 第一次送出失敗', firstErr);
+        // 多則一起送失敗且不是權限問題（例如卡片內容被拒）：只送紀錄卡再試一次
+        if (msgs.length > 1 && !/403|permission|forbidden|scope|auth/i.test(String((firstErr && (firstErr.code || firstErr.status)) || '') + ' ' + String((firstErr && firstErr.message) || ''))) {
+          try {
+            await liffObj.sendMessages([pack.flex]);
+            return { sent: 'flex', count: 1, droppedExtra: true };
+          } catch (singleErr) {
+            console.warn('[SD] 只送紀錄卡也失敗', singleErr);
+          }
+        }
         // 舊授權沒有 chat_message.write：要求重新授權後再試一次
         try {
           if (liffObj.permission && typeof liffObj.permission.requestAll === 'function') {
             await liffObj.permission.requestAll();
           }
-          await liffObj.sendMessages([pack.flex]);
-          return { sent: 'flex' };
+          await liffObj.sendMessages(msgs);
+          return { sent: 'flex', count: msgs.length };
         } catch (retryErr) {
           console.warn('[SD] 重新授權後仍失敗', retryErr);
           var code = String((retryErr && (retryErr.code || retryErr.status)) || '');
@@ -1204,9 +1216,112 @@
     }
   }
 
-  async function postVisitToChat(rec, isUpdate) {
+  /** overview：{ visits, me, date } → 一起送「今日回報總覽」卡 */
+  async function postVisitToChat(rec, isUpdate, overview) {
     var pack = packMessages(visitFlexMessage(rec, isUpdate), visitPlainText(rec, isUpdate));
+    if (overview && overview.visits) {
+      try { pack.extra = [todayOverviewFlex(overview.visits, overview.me, overview.date, rec && rec.visitId)]; }
+      catch (e) { console.warn('[SD] 今日總覽卡建立失敗', e); }
+    }
     return postChatRecord(pack);
+  }
+
+  /* ---------- 今日回報總覽（只放自己的紀錄；不含任何主管專用欄位） ---------- */
+  var OVERVIEW_MAX_ROWS = 15;
+  var HEAT_COLOR = { A: '#FF5A66', B: '#F5C15A', C: '#9AA0A6', D: '#6B6B70' };
+
+  function overviewStat(label, value, color) {
+    return {
+      type: 'box', layout: 'vertical', flex: 1, paddingAll: '8px', cornerRadius: '6px', backgroundColor: '#1A1A1C',
+      contents: [
+        { type: 'text', text: String(value), size: 'xl', weight: 'bold', color: color || '#FFFFFF', align: 'center' },
+        { type: 'text', text: label, size: 'xxs', color: '#999999', align: 'center' }
+      ]
+    };
+  }
+
+  function overviewRow(v, isNew) {
+    var heat = String(v.heat || '').trim();
+    var time = String(v.createdAt || '').slice(11, 16) || '—';
+    return {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        { type: 'text', text: time, size: 'xs', color: isNew ? '#FF5A66' : '#888888', flex: 2, gravity: 'top' },
+        {
+          type: 'box', layout: 'vertical', flex: 6,
+          contents: [
+            { type: 'text', text: clipText(v.customerName || '（未填稱呼）', 14) + (isNew ? '　NEW' : ''), size: 'sm', color: '#FFFFFF', weight: 'bold', wrap: false },
+            { type: 'text', text: clipText(v.carModel || '—', 22), size: 'xxs', color: '#AAAAAA', wrap: false }
+          ]
+        },
+        {
+          type: 'box', layout: 'vertical', flex: 3,
+          contents: [
+            { type: 'text', text: heat ? heatLabel(heat) : '—', size: 'xs', weight: 'bold', color: HEAT_COLOR[heat] || '#CCCCCC', align: 'end' },
+            { type: 'text', text: clipText(v.result || '—', 6), size: 'xxs', color: '#DDDDDD', align: 'end' }
+          ]
+        }
+      ]
+    };
+  }
+
+  function todayOverviewFlex(visits, me, date, newId) {
+    date = date || todayStr();
+    var list = (visits || []).filter(function (v) {
+      return v && v.visitDate === date && (!me || !me.staffId || v.staffId === me.staffId);
+    }).slice().sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+    var heatN = { A: 0, B: 0, C: 0, D: 0 };
+    var orders = 0;
+    list.forEach(function (v) {
+      var h = String(v.heat || '').trim();
+      if (h in heatN) heatN[h] += 1;
+      if (String(v.result || '').trim() === '下訂') orders += 1;
+    });
+    var rows = list.slice(0, OVERVIEW_MAX_ROWS).map(function (v) { return overviewRow(v, v.visitId === newId); });
+    if (list.length > OVERVIEW_MAX_ROWS) {
+      rows.push({ type: 'text', text: '…還有 ' + (list.length - OVERVIEW_MAX_ROWS) + ' 筆', size: 'xs', color: '#999999', margin: 'md', align: 'center' });
+    }
+    if (!rows.length) rows.push({ type: 'text', text: '今天還沒有看車紀錄。', size: 'sm', color: '#999999', margin: 'md' });
+    var body = [
+      {
+        type: 'box', layout: 'horizontal', spacing: 'sm',
+        contents: [overviewStat('今日帶看', list.length), overviewStat('下訂', orders, '#FF5A66')]
+      },
+      {
+        type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+        contents: ['A', 'B', 'C', 'D'].map(function (k) {
+          return {
+            type: 'box', layout: 'vertical', flex: 1, paddingAll: '6px', cornerRadius: '6px', backgroundColor: '#141416',
+            contents: [
+              { type: 'text', text: String(heatN[k]), size: 'md', weight: 'bold', color: HEAT_COLOR[k], align: 'center' },
+              { type: 'text', text: heatLabel(k), size: 'xxs', color: '#999999', align: 'center' }
+            ]
+          };
+        })
+      },
+      { type: 'separator', color: '#333333', margin: 'lg' }
+    ].concat(rows);
+    var bubble = flexBubble('📋 今日回報總覽', body);
+    bubble.size = 'mega';
+    bubble.header.contents.splice(2, 0, {
+      type: 'text', text: date + (me && me.name ? '　' + me.name : ''), size: 'xs', color: '#AAAAAA', margin: 'sm'
+    });
+    var todayId = (cfg.liffIds || {}).today;
+    if (todayId) {
+      bubble.styles.footer = { backgroundColor: '#0A0A0A' };
+      bubble.footer = {
+        type: 'box', layout: 'vertical', backgroundColor: '#0A0A0A', paddingAll: '12px', paddingTop: '0px',
+        contents: [{
+          type: 'button', style: 'primary', color: '#D7192A', height: 'sm',
+          action: { type: 'uri', label: '開啟今日總結', uri: 'https://liff.line.me/' + todayId }
+        }]
+      };
+    }
+    return {
+      type: 'flex',
+      altText: clipText('今日回報總覽：' + list.length + ' 筆（下訂 ' + orders + '）', 400),
+      contents: bubble
+    };
   }
 
   async function postDailyNoteToChat(rec) {
@@ -1238,6 +1353,7 @@
     closeWindow: closeWindow,
     postVisitToChat: postVisitToChat,
     postDailyNoteToChat: postDailyNoteToChat,
+    todayOverviewFlex: todayOverviewFlex,
     shareFlex: shareFlex,
     stockLiffUrl: stockLiffUrl,
     HEAT_INFO: HEAT_INFO,
