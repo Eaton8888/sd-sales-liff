@@ -17,7 +17,7 @@
       el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, v.stockId, v.customerPhone].filter(Boolean).join(' ｜ ') }),
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       el('div', { class: 'visit-tags' },
-        v.customerSource ? el('span', { class: 'badge', text: v.customerSource }) : null,
+        v.customerSource ? el('span', { class: 'badge', text: SD.sourceDisplay(v) }) : null,
         v.heat ? badge('heat', v.heat) : null,
         v.result ? badge('result', v.result) : null
       )
@@ -166,7 +166,7 @@
           el('div', { class: 'section-title', text: '結果分布' }),
           el('div', { class: 'card' }, bars(summary.resultCounts)),
           el('div', { class: 'section-title', text: '客戶來源' }),
-          el('div', { class: 'card' }, bars(summary.sourceCounts)),
+          el('div', { class: 'card' }, bars(SD.mergeSourceCounts(summary.sourceCounts))),
           el('div', { class: 'section-title' },
             el('span', { text: '今日待跟進' }),
             el('span', { class: 'count', text: (summary.followUps || []).length + ' 筆' })

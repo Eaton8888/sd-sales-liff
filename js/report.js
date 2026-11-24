@@ -8,7 +8,7 @@
 
   function visitCard(v, onEdit) {
     var tags = el('div', { class: 'visit-tags' },
-      v.customerSource ? el('span', { class: 'badge', text: v.customerSource }) : null,
+      v.customerSource ? el('span', { class: 'badge', text: SD.sourceDisplay(v) }) : null,
       v.heat ? badge('heat', v.heat) : null,
       v.result ? badge('result', v.result) : null
     );
@@ -70,7 +70,7 @@
 
   function emptyForm(today) {
     return {
-      visitDate: today, customerName: '', customerPhone: '', customerSource: '',
+      visitDate: today, customerName: '', customerPhone: '', customerSource: '', sourceText: '',
       carModel: '', carPlate: '', carPrice: '', stockId: '', budgetRange: '', heat: '', result: '',
       nextContactDate: '', note: ''
     };
@@ -127,7 +127,7 @@
       }
 
       var FALLBACK_OPTIONS = {
-        '客戶來源': ['FB廣告', 'IG廣告', 'LINE', '來電', '現場', '介紹', '其他'],
+        '客戶來源': ['FB', 'IG', 'TikTok', 'Threads', 'LINE', '現場', '親友介紹', '其他'],
         '客戶熱度': ['A', 'B', 'C', 'D'],
         '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
       };
@@ -184,6 +184,7 @@
         if (!form.visitDate) return '請填寫看車日期。';
         if (!form.customerName.trim()) return '請填寫客戶稱呼。';
         if (!form.customerSource) return '請選擇客戶來源。';
+        if (form.customerSource === '其他' && !String(form.sourceText || '').trim()) return '客戶來源選「其他」時，請填寫來源。';
         if (!form.carModel.trim()) return '請選擇或填寫看車車款。';
         if (!form.heat) return '請選擇客戶熱度。';
         if (!form.result) return '請選擇結果。';
@@ -219,7 +220,7 @@
           heat: form.heat,
           result: form.result,
           nextContactDate: form.nextContactDate,
-          note: form.note.trim()
+          note: SD.joinSourceNote(form.customerSource === '其他' ? form.sourceText : '', form.note)
         };
         try {
           var rec;
@@ -257,7 +258,8 @@
           visitDate: v.visitDate || ctx.today(),
           customerName: v.customerName || '',
           customerPhone: v.customerPhone || '',
-          customerSource: v.customerSource || '',
+          customerSource: SD.mapLegacySource(v.customerSource),
+          sourceText: SD.splitSourceNote(v.note).sourceText || (String(v.customerSource || '').trim() === '來電' ? '來電' : ''),
           carModel: v.carModel || '',
           carPlate: v.carPlate || '',
           carPrice: v.carPrice === '' || v.carPrice == null ? '' : v.carPrice,
@@ -266,7 +268,7 @@
           heat: v.heat || '',
           result: v.result || '',
           nextContactDate: v.nextContactDate || '',
-          note: v.note || ''
+          note: SD.splitSourceNote(v.note).note
         };
         successId = '';
         tab = 'mine';
@@ -297,7 +299,16 @@
           ),
           el('div', { class: 'field' },
             el('div', { class: 'label', text: '客戶來源' }, el('span', { class: 'req', text: ' *' })),
-            chips('source', options['客戶來源'] || [], form.customerSource, function (v) { form.customerSource = v; render(); })
+            chips('source', options['客戶來源'] || [], form.customerSource, function (v) {
+              form.customerSource = v;
+              render();
+              if (v === '其他' && !String(form.sourceText || '').trim()) { var n = document.getElementById('sourceText'); if (n) n.focus({ preventScroll: true }); }
+            }),
+            form.customerSource === '其他' ? el('input', {
+              class: 'input', id: 'sourceText', maxlength: '30', style: { marginTop: '10px' },
+              placeholder: '請填寫來源', 'aria-label': '請填寫來源', value: form.sourceText || '',
+              oninput: function (e) { form.sourceText = e.target.value; }
+            }) : null
           ),
           renderCarField(),
           el('div', { class: 'field' },

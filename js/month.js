@@ -121,7 +121,7 @@
         kids.push(el('div', { class: 'card' }, goalBlock(goal, stats)));
 
         kids.push(el('div', { class: 'section-title', text: '客戶來源' }));
-        kids.push(el('div', { class: 'card' }, bars(data.sourceCounts || stats.sourceCounts)));
+        kids.push(el('div', { class: 'card' }, bars(SD.mergeSourceCounts(data.sourceCounts || stats.sourceCounts))));
 
         var prev = data.previous || {};
         kids.push(el('div', { class: 'section-title', text: '對照 ' + SD.ymLabel(prevM) }));

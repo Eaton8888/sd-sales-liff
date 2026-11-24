@@ -216,7 +216,7 @@
     var options = {
       '角色': ['業務', '主管'],
       '狀態': ['啟用', '停用'],
-      '客戶來源': ['FB廣告', 'IG廣告', 'LINE', '來電', '現場', '介紹', '其他'],
+      '客戶來源': ['FB', 'IG', 'TikTok', 'Threads', 'LINE', '現場', '親友介紹', '其他'],
       '客戶熱度': ['A', 'B', 'C', 'D'],
       '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
     };
@@ -248,7 +248,7 @@
           'V' + ds.replace(/-/g, '') + '-' + String(startN + i).padStart(4, '0'),
           staffId, name, ds, ds + ' 14:00:00',
           '客戶' + (startN + i), '09' + String(10000000 + startN + i),
-          options['客戶來源'][i % 7], ['Porsche Macan', 'BMW 530i', 'Mercedes-Benz GLB', 'Tesla Model 3'][i % 4],
+          options['客戶來源'][i % 8], ['Porsche Macan', 'BMW 530i', 'Mercedes-Benz GLB', 'Tesla Model 3'][i % 4],
           '', '150–200萬', ['A', 'B', 'C'][i % 3], res, res === '再約' ? ds : '', ''
         ));
       }
@@ -821,6 +821,48 @@
 
   /* ---------- 聊天室紀錄（liff.sendMessages） ---------- */
   var CHAT_CTX_OK = { utou: 1, group: 1, room: 1, square_chat: 1 };
+  /* ---------- 客戶來源 ----------
+   * 選「其他」時，填的來源文字存在「備註」第一行：【來源】文字
+   * （客戶來源欄仍存「其他」，伺服器驗證不用改、不必重新部署） */
+  var SOURCE_TAG = '【來源】';
+  var SOURCE_LEGACY = { 'FB廣告': 'FB', 'IG廣告': 'IG', '介紹': '親友介紹', '來電': '其他' };
+  function splitSourceNote(note) {
+    var s = String(note == null ? '' : note);
+    if (s.indexOf(SOURCE_TAG) !== 0) return { sourceText: '', note: s };
+    var nl = s.indexOf('\n');
+    var line = nl < 0 ? s : s.slice(0, nl);
+    return { sourceText: line.slice(SOURCE_TAG.length).trim(), note: nl < 0 ? '' : s.slice(nl + 1) };
+  }
+  function joinSourceNote(sourceText, note) {
+    var t = String(sourceText || '').replace(/\s+/g, ' ').trim();
+    var n = String(note || '').trim();
+    if (!t) return n;
+    return SOURCE_TAG + t + (n ? '\n' + n : '');
+  }
+  /** 顯示用：其他（文字）；舊資料照原值顯示 */
+  function sourceDisplay(rec) {
+    rec = rec || {};
+    var src = String(rec.customerSource || '').trim();
+    if (src === '其他') {
+      var t = splitSourceNote(rec.note).sourceText;
+      return t ? '其他（' + t + '）' : '其他';
+    }
+    return src;
+  }
+  /** 舊選項對應到新選項（編輯舊紀錄、統計合併用） */
+  function mapLegacySource(src) {
+    src = String(src || '').trim();
+    return SOURCE_LEGACY[src] || src;
+  }
+  function mergeSourceCounts(map) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (k) {
+      var nk = mapLegacySource(k);
+      out[nk] = (out[nk] || 0) + (map[k] || 0);
+    });
+    return out;
+  }
+
   var HEAT_LABEL = { A: 'A（熱）', B: 'B（溫）', C: 'C（冷）', D: 'D（無效）' };
   // 回報表單選熱度時顯示的說明（試算表存的仍是 A/B/C/D）
   var HEAT_INFO = {
@@ -927,7 +969,7 @@
       ['客戶稱呼', rec.customerName],
       ['看車車款', rec.carModel],
       ['車牌', rec.carPlate],
-      ['客戶來源', rec.customerSource],
+      ['客戶來源', sourceDisplay(rec)],
       ['客戶熱度', rec.heat ? heatLabel(rec.heat) : ''],
       ['結果', rec.result],
       ['下次聯絡日', rec.nextContactDate]
@@ -946,7 +988,7 @@
       flexRow('看車車款', rec.carModel),
       flexRow('車牌', rec.carPlate),
       flexRow('售價', rec.carPrice !== '' && rec.carPrice != null ? rec.carPrice + ' 萬' : ''),
-      flexRow('客戶來源', rec.customerSource),
+      flexRow('客戶來源', sourceDisplay(rec)),
       flexRow('客戶熱度', rec.heat ? heatLabel(rec.heat) : ''),
       flexRow('結果', rec.result),
       flexRow('下次聯絡日', rec.nextContactDate)
@@ -1199,6 +1241,11 @@
     shareFlex: shareFlex,
     stockLiffUrl: stockLiffUrl,
     HEAT_INFO: HEAT_INFO,
+    splitSourceNote: splitSourceNote,
+    joinSourceNote: joinSourceNote,
+    sourceDisplay: sourceDisplay,
+    mapLegacySource: mapLegacySource,
+    mergeSourceCounts: mergeSourceCounts,
     heatLabel: heatLabel,
     visitFlexMessage: visitFlexMessage,
     noteFlexMessage: noteFlexMessage
