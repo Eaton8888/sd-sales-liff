@@ -142,6 +142,7 @@
         };
         try {
           var rec;
+          var wasEdit = !!editing;
           if (editing) rec = await ctx.api('updateVisit', Object.assign({ visitId: editing }, payload));
           else rec = await ctx.api('createVisit', payload);
           successId = rec.visitId;
@@ -149,6 +150,8 @@
           form = emptyForm(ctx.today());
           await reloadLists();
           render();
+          window.scrollTo(0, 0);
+          try { await SD.postVisitToChat(rec, wasEdit); } catch (chatErr) { console.warn(chatErr); }
         } catch (err) {
           banner.textContent = err.message || '送出失敗';
           banner.classList.remove('is-hidden');
@@ -244,7 +247,7 @@
             el('h2', { text: '回報已送出' }),
             el('p', { class: 'success-id', text: '紀錄編號　' + successId }),
             el('div', { class: 'btn-row' },
-              el('button', { class: 'btn btn-primary', type: 'button', text: '再回報一筆', onclick: function () { successId = ''; render(); } }),
+              el('button', { class: 'btn btn-primary', type: 'button', text: '再回報一筆', onclick: function () { successId = ''; render(); window.scrollTo(0, 0); } }),
               el('button', { class: 'btn btn-ghost', type: 'button', text: '關閉', onclick: function () { ctx.close(); } })
             )
           )

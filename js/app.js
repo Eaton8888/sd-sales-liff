@@ -141,9 +141,13 @@
 
   function setApp(nodes) {
     var app = document.getElementById('app');
+    // 保留目前捲動位置，點選項重畫畫面時不會跳回最上方
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+    app.style.minHeight = app.offsetHeight + 'px';
     app.textContent = '';
     (Array.isArray(nodes) ? nodes : [nodes]).forEach(function (n) { if (n) app.appendChild(n); });
-    window.scrollTo(0, 0);
+    app.style.minHeight = '';
+    window.scrollTo(0, y);
   }
 
   function bootScreen(text) {
