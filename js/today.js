@@ -14,7 +14,7 @@
           el('div', { class: 'visit-name', text: v.customerName || '（未填稱呼）' })
         )
       ),
-      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.stockId, v.customerPhone].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, v.stockId, v.customerPhone].filter(Boolean).join(' ｜ ') }),
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       el('div', { class: 'visit-tags' },
         v.customerSource ? el('span', { class: 'badge', text: v.customerSource }) : null,
@@ -52,24 +52,41 @@
       var saving = false;
       var staffOptions = [];
 
-      async function load() {
+      var loading = false;
+      var noteDirty = false;
+      var seq = 0;
+      function cacheName() { return 'today_' + ctx.today() + '_' + scope + '_' + (filterId || ''); }
+
+      function apply(results) {
+        summary = results[0];
+        var list = results[1];
+        visits = list.visits || [];
+        if (isMgr && scope === 'store' && !filterId) {
+          var map = {};
+          (list.visits || []).forEach(function (v) { map[v.staffId] = v.staffName; });
+          (list.unreported || []).forEach(function (s) { map[s.staffId] = s.name; });
+          staffOptions = Object.keys(map).sort().map(function (id) { return { staffId: id, name: map[id] }; });
+        }
+        if (!noteDirty) {
+          if (summary.dailyNote != null) note = summary.dailyNote;
+          else if (scope === 'self') note = summary.dailyNote || note;
+        }
+      }
+
+      async function fetchData() {
         var payload = { date: ctx.today() };
         if (isMgr && scope === 'self') payload.staffId = filterId || me.staffId;
         if (isMgr && scope === 'store' && filterId) payload.staffId = filterId;
-        summary = await ctx.api('todaySummary', payload);
         var listPayload = { date: ctx.today() };
         if (payload.staffId) listPayload.staffId = payload.staffId;
-        var list = await ctx.api('listToday', listPayload);
-        visits = list.visits || [];
-        if (isMgr && scope === 'store' && !filterId) {
-          var all = await ctx.api('listToday', { date: ctx.today() });
-          var map = {};
-          (all.visits || []).forEach(function (v) { map[v.staffId] = v.staffName; });
-          (all.unreported || []).forEach(function (s) { map[s.staffId] = s.name; });
-          staffOptions = Object.keys(map).sort().map(function (id) { return { staffId: id, name: map[id] }; });
-        }
-        if (summary.dailyNote != null) note = summary.dailyNote;
-        else if (scope === 'self') note = summary.dailyNote || note;
+        // 兩個請求同時送，減少等待時間
+        // 合併成一次連線
+        var listCall = Object.assign({ action: 'listToday' }, listPayload);
+        return ctx.batch([Object.assign({ action: 'todaySummary' }, payload), listCall]).then(function (r) {
+          if (r[0] instanceof Error) throw r[0];
+          if (r[1] instanceof Error) throw r[1];
+          return r;
+        });
       }
 
       async function saveNote() {
@@ -88,8 +105,10 @@
         try {
           var rec = await ctx.api('saveDailyNote', { date: ctx.today(), note: text });
           note = rec.note;
+          noteDirty = false;
           ctx.toast(rec.updated ? '今日心得已更新' : '今日心得已儲存');
           if (summary) summary.dailyNote = rec.note;
+          try { await SD.postDailyNoteToChat(rec); } catch (chatErr) { console.warn(chatErr); }
         } catch (err) {
           banner.textContent = err.message || '儲存失敗';
           banner.classList.remove('is-hidden');
@@ -120,7 +139,16 @@
         var showStaff = isMgr && !(scope === 'self' && (filterId === me.staffId || !filterId));
         if (isMgr && scope === 'store' && !filterId) showStaff = true;
 
-        var kids = headExtra.concat([
+        if (!summary) {
+          SD.setApp([
+            SD.topbar(me),
+            SD.pageHead('今日總結', 'Today', SD.ICO.cal),
+            el('div', { class: 'wrap' }, headExtra, SD.loadingNote('讀取中…'), SD.skeleton(5))
+          ]);
+          return;
+        }
+
+        var kids = headExtra.concat(loading ? [SD.loadingNote('更新中…')] : []).concat([
           el('div', { class: 'stats-3' },
             el('div', { class: 'stat' },
               el('div', { class: 'stat-label', text: '帶看' }),
@@ -181,7 +209,7 @@
           /* 主管在全店檢視時仍可寫自己的心得 */
           kids.push(el('div', { class: 'section-title', text: isMgr && scope === 'store' && !filterId ? '我的今日心得' : '今日心得' }));
           kids.push(el('div', { class: 'card' },
-            el('textarea', { class: 'textarea', id: 'daily-note', maxlength: '2000', placeholder: '今天的狀況、待跟進重點…' }, note || ''),
+            el('textarea', { class: 'textarea', id: 'daily-note', maxlength: '2000', placeholder: '今天的狀況、待跟進重點…', oninput: function (e) { note = e.target.value; noteDirty = true; } }, note || ''),
             el('div', { class: 'banner is-hidden', id: 'note-err', style: { marginTop: '12px' } }),
             el('button', { class: 'btn btn-primary btn-block', type: 'button', id: 'save-note', style: { marginTop: '12px' }, text: '儲存心得', onclick: saveNote })
           ));
@@ -194,13 +222,39 @@
         ]);
       }
 
+      function renderKeepFocus() {
+        var ae = document.activeElement;
+        var fid = ae && ae.id === 'daily-note' ? 'daily-note' : '';
+        var a = null, b = null;
+        try { if (fid) { a = ae.selectionStart; b = ae.selectionEnd; } } catch (e) {}
+        render();
+        if (fid) {
+          var n = document.getElementById(fid);
+          if (n) { try { n.focus({ preventScroll: true }); n.setSelectionRange(a, b); } catch (e) {} }
+        }
+      }
+
+      // 先顯示上次的資料（或骨架），背景同時拿最新的再更新畫面
       async function refresh() {
-        SD.setApp([SD.topbar(me), SD.bootScreen('載入中…')]);
+        var my = ++seq;
+        var name = cacheName();
+        var cached = ctx.cacheGet(name);
+        summary = null;
+        if (cached) apply(cached);
+        loading = true;
+        renderKeepFocus();
         try {
-          await load();
-          render();
+          var results = await fetchData();
+          ctx.cacheSet(name, results);
+          if (my !== seq) return;
+          apply(results);
+          loading = false;
+          renderKeepFocus();
         } catch (err) {
-          SD.setApp([SD.topbar(me), SD.errorScreen('無法載入今日總結', err.message, refresh)]);
+          if (my !== seq) return;
+          loading = false;
+          if (summary) { renderKeepFocus(); ctx.toast('更新失敗：' + (err.message || '請稍後再試')); }
+          else SD.setApp([SD.topbar(me), SD.errorScreen('無法載入今日總結', err.message, refresh)]);
         }
       }
 

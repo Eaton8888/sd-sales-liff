@@ -24,7 +24,7 @@
         ),
         edit
       ),
-      el('div', { class: 'visit-meta', text: [v.carModel, v.stockId, v.budgetRange].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [v.carModel, v.carPlate, v.carPrice !== '' && v.carPrice != null ? v.carPrice + '萬' : '', v.stockId, v.budgetRange].filter(Boolean).join(' ｜ ') }),
       v.staffName && onEdit === false ? el('div', { class: 'visit-meta', text: v.staffName + '　' + v.staffId }) : null,
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       tags
@@ -54,7 +54,7 @@
   function emptyForm(today) {
     return {
       visitDate: today, customerName: '', customerPhone: '', customerSource: '',
-      carModel: '', stockId: '', budgetRange: '', heat: '', result: '',
+      carModel: '', carPlate: '', carPrice: '', stockId: '', budgetRange: '', heat: '', result: '',
       nextContactDate: '', note: ''
     };
   }
@@ -75,37 +75,99 @@
       var staffNames = [];
       var unreported = [];
       var successId = new URLSearchParams(location.search).get('success') || '';
-
-      try {
-        options = await ctx.api('options');
-      } catch (err) {
-        SD.setApp([SD.topbar(me), SD.errorScreen('無法載入選項', err.message)]);
-        return;
+      // 從「查在庫車」連結開啟：liff.line.me/{id}?view=stock
+      // LIFF 第一次載入時參數包在 liff.state 裡（例如 ?liff.state=%3Fview%3Dstock），兩種都要認得
+      function wantStock() {
+        var qs = new URLSearchParams(location.search);
+        if (qs.get('view') === 'stock') return true;
+        var stt = qs.get('liff.state') || '';
+        return /(^|[?&])view=stock(&|$)/.test(stt);
       }
-
-      async function reloadLists() {
-        var mine = await ctx.api('listToday', { date: ctx.today() });
-        myVisits = mine.visits || [];
-        if (isMgr) {
-          var all = await ctx.api('listToday', { date: ctx.today(), staffId: filterId || undefined });
-          allVisits = all.visits || [];
-          unreported = all.unreported || [];
-          var seen = {};
-          staffNames = [];
-          allVisits.forEach(function (v) {
-            if (!seen[v.staffId]) {
-              seen[v.staffId] = true;
-              staffNames.push({ staffId: v.staffId, name: v.staffName });
-            }
-          });
+      var view = wantStock() ? 'stock' : 'report';
+      var manualCar = false;
+      var renderQueued = false;
+      function queueRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        setTimeout(function () { renderQueued = false; render(); }, 0);
+      }
+      var stock = SD.Stock.create(ctx, {
+        onChange: queueRender,
+        onUseCar: function (car) {
+          pickCar(car);
+          view = 'report';
+          tab = 'mine';
+          render();
+          var f = document.getElementById('visit-form');
+          if (f) f.scrollIntoView({ block: 'start' });
         }
+      });
+      function pickCar(car) {
+        form.carModel = stock.carModelText(car);
+        form.carPlate = car.plate || '';
+        form.carPrice = car.price == null ? '' : car.price;
+        manualCar = false;
       }
+
+      var FALLBACK_OPTIONS = {
+        '客戶來源': ['FB廣告', 'IG廣告', 'LINE', '來電', '現場', '介紹', '其他'],
+        '客戶熱度': ['A', 'B', 'C'],
+        '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
+      };
+      // 選項：先用上次存的（或預設），表單立刻出現；背景再向伺服器拿最新
+      options = ctx.cacheGet('options') || FALLBACK_OPTIONS;
+      var listsLoading = true;
+      var listKey = function () { return 'report_lists_' + ctx.today() + '_' + (filterId || ''); };
+
+      function applyLists(d) {
+        myVisits = d.myVisits || [];
+        allVisits = d.allVisits || [];
+        unreported = d.unreported || [];
+        var seen = {};
+        staffNames = [];
+        allVisits.forEach(function (v) {
+          if (!seen[v.staffId]) {
+            seen[v.staffId] = true;
+            staffNames.push({ staffId: v.staffId, name: v.staffName });
+          }
+        });
+      }
+
+      var listSeq = 0;
+      async function reloadLists() {
+        var seq = ++listSeq;
+        var key = listKey();
+        var d;
+        if (!isMgr) {
+          var mine = await ctx.api('listToday', { date: ctx.today() });
+          d = { myVisits: mine.visits || [] };
+        } else if (!filterId) {
+          // 主管看全店：一次查詢就同時有「我的」和「全店」
+          var all = await ctx.api('listToday', { date: ctx.today() });
+          d = { myVisits: all.visits || [], allVisits: all.visits || [], unreported: all.unreported || [] };
+        } else {
+          var r = await Promise.all([
+            ctx.api('listToday', { date: ctx.today() }),
+            ctx.api('listToday', { date: ctx.today(), staffId: filterId })
+          ]);
+          d = { myVisits: r[0].visits || [], allVisits: r[1].visits || [], unreported: r[1].unreported || [] };
+        }
+        ctx.cacheSet(key, d);
+        if (seq !== listSeq) return; // 已有較新的查詢，舊結果不要蓋掉
+        applyLists(d);
+        haveLists = true;
+        listsLoading = false;
+      }
+
+      var haveLists = false;
+      var cachedLists = ctx.cacheGet(listKey());
+      if (cachedLists) { applyLists(cachedLists); haveLists = true; }
 
       function validate() {
         if (!form.visitDate) return '請填寫看車日期。';
         if (!form.customerName.trim()) return '請填寫客戶稱呼。';
         if (!form.customerSource) return '請選擇客戶來源。';
-        if (!form.carModel.trim()) return '請填寫看車車款。';
+        if (!form.carModel.trim()) return '請選擇或填寫看車車款。';
         if (!form.heat) return '請選擇客戶熱度。';
         if (!form.result) return '請選擇結果。';
         if (form.result === '再約' && !form.nextContactDate) return '結果為「再約」時，請填寫下次聯絡日。';
@@ -133,6 +195,8 @@
           customerPhone: form.customerPhone.trim(),
           customerSource: form.customerSource,
           carModel: form.carModel.trim(),
+          carPlate: form.carPlate || '',
+          carPrice: form.carPrice === '' || form.carPrice == null ? '' : form.carPrice,
           stockId: form.stockId.trim(),
           budgetRange: form.budgetRange.trim(),
           heat: form.heat,
@@ -148,10 +212,20 @@
           successId = rec.visitId;
           editing = null;
           form = emptyForm(ctx.today());
-          await reloadLists();
+          // 先把這筆放進清單立刻顯示，不必等重新查詢
+          if (rec && rec.visitId && rec.visitDate === ctx.today()) {
+            var upsert = function (list) {
+              var out = list.filter(function (v) { return v.visitId !== rec.visitId; });
+              out.unshift(rec);
+              return out;
+            };
+            myVisits = upsert(myVisits);
+            if (isMgr && (!filterId || filterId === rec.staffId)) allVisits = upsert(allVisits);
+          }
           render();
           window.scrollTo(0, 0);
           try { await SD.postVisitToChat(rec, wasEdit); } catch (chatErr) { console.warn(chatErr); }
+          reloadLists().then(render).catch(function (e) { console.warn(e); });
         } catch (err) {
           banner.textContent = err.message || '送出失敗';
           banner.classList.remove('is-hidden');
@@ -168,6 +242,8 @@
           customerPhone: v.customerPhone || '',
           customerSource: v.customerSource || '',
           carModel: v.carModel || '',
+          carPlate: v.carPlate || '',
+          carPrice: v.carPrice === '' || v.carPrice == null ? '' : v.carPrice,
           stockId: v.stockId || '',
           budgetRange: v.budgetRange || '',
           heat: v.heat || '',
@@ -177,6 +253,8 @@
         };
         successId = '';
         tab = 'mine';
+        view = 'report';
+        manualCar = !form.carPlate && !!form.carModel;
         render();
         document.getElementById('visit-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
@@ -204,10 +282,7 @@
             el('div', { class: 'label', text: '客戶來源' }, el('span', { class: 'req', text: ' *' })),
             chips('source', options['客戶來源'] || [], form.customerSource, function (v) { form.customerSource = v; render(); })
           ),
-          el('div', { class: 'field' },
-            el('label', { class: 'label', for: 'carModel', text: '看車車款' }, el('span', { class: 'req', text: ' *' })),
-            el('input', { class: 'input', id: 'carModel', maxlength: '80', placeholder: '例如 Porsche Macan', value: form.carModel, oninput: function (e) { form.carModel = e.target.value; } })
-          ),
+          renderCarField(),
           el('div', { class: 'field' },
             el('label', { class: 'label', for: 'stockId', text: '庫存編號' }),
             el('input', { class: 'input', id: 'stockId', placeholder: '選填', value: form.stockId, oninput: function (e) { form.stockId = e.target.value; } })
@@ -236,6 +311,30 @@
           el('div', { class: 'banner is-hidden', id: 'form-err' }),
           el('button', { class: 'btn btn-primary btn-block', type: 'submit', id: 'submit-btn', text: editing ? '儲存修改' : '送出回報' }),
           editing ? el('button', { class: 'btn btn-ghost btn-block', type: 'button', style: { marginTop: '8px' }, text: '取消編輯', onclick: function () { editing = null; form = emptyForm(ctx.today()); render(); } }) : null
+        );
+      }
+
+      function renderCarField() {
+        var st = stock.state;
+        var noInventory = !!st.error && !(st.cars && st.cars.length);
+        var showInput = !form.carPlate && (manualCar || noInventory);
+        return el('div', { class: 'field' },
+          el('div', { class: 'label', text: '看車車款' }, el('span', { class: 'req', text: ' *' }),
+            el('span', { class: 'hint', style: { marginLeft: '8px', fontWeight: '400' }, text: form.carPlate || noInventory ? '' : '先點廠牌，再點車' })),
+          stock.pickerNodes(form, {
+            manual: manualCar,
+            onPick: function (car) { pickCar(car); render(); },
+            onClear: function () { form.carModel = ''; form.carPlate = ''; form.carPrice = ''; manualCar = false; render(); },
+            onManual: function (on) { manualCar = on; if (on) { form.carPlate = ''; form.carPrice = ''; } render(); if (on) { var n = document.getElementById('carModel'); if (n) n.focus(); } }
+          }),
+          showInput ? el('input', { class: 'input', id: 'carModel', maxlength: '80', style: { marginTop: '10px' }, placeholder: '例如 Porsche Macan 2020 白', value: form.carModel, oninput: function (e) { form.carModel = e.target.value; } }) : null
+        );
+      }
+
+      function viewTabs() {
+        return el('div', { class: 'tabs view-tabs' },
+          el('button', { class: 'tab' + (view === 'report' ? ' is-on' : ''), type: 'button', text: '回報看車', onclick: function () { if (view !== 'report') { view = 'report'; render(); window.scrollTo(0, 0); } } }),
+          el('button', { class: 'tab' + (view === 'stock' ? ' is-on' : ''), type: 'button', text: '🚗 查在庫車', onclick: function () { if (view !== 'stock') { view = 'stock'; stock.load(); render(); window.scrollTo(0, 0); } } })
         );
       }
 
@@ -268,7 +367,45 @@
       }
 
       function render() {
-        var bodyKids = [];
+        // 背景資料回來重畫時，保留正在輸入的欄位和游標位置
+        var ae = document.activeElement;
+        var focusId = ae && ae.id && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) ? ae.id : '';
+        var selS = null, selE = null;
+        try { if (focusId && ae.selectionStart != null) { selS = ae.selectionStart; selE = ae.selectionEnd; } } catch (e) {}
+        renderInner();
+        if (focusId) {
+          var n = document.getElementById(focusId);
+          if (n) {
+            try { n.focus({ preventScroll: true }); } catch (e) { n.focus(); }
+            try { if (selS != null) n.setSelectionRange(selS, selE); } catch (e) {}
+          }
+        }
+      }
+
+      function listOrLoading(title, items, withEdit, extra) {
+        if (listsLoading && !haveLists) {
+          return el('section', {},
+            el('div', { class: 'section-title' }, el('span', { text: title })),
+            extra || null,
+            SD.loadingNote('讀取中…'),
+            SD.skeleton(2)
+          );
+        }
+        var block = listBlock(title, items, withEdit, extra);
+        if (listsLoading) block.insertBefore(SD.loadingNote('更新中…'), block.children[1] || null);
+        return block;
+      }
+
+      function renderInner() {
+        if (view === 'stock') {
+          SD.setApp([
+            SD.topbar(me),
+            SD.pageHead('查在庫車', 'In stock', SD.ICO.car),
+            el('div', { class: 'wrap' }, [viewTabs()].concat(stock.viewNodes()))
+          ]);
+          return;
+        }
+        var bodyKids = [viewTabs()];
         if (isMgr) {
           bodyKids.push(el('div', { class: 'tabs' },
             el('button', { class: 'tab' + (tab === 'mine' ? ' is-on' : ''), type: 'button', text: '我的回報', onclick: function () { tab = 'mine'; render(); } }),
@@ -278,17 +415,23 @@
         if (tab === 'mine') {
           bodyKids.push(renderForm());
           var mineToday = myVisits.filter(function (v) { return v.staffId === me.staffId; });
-          bodyKids.push(listBlock('今日已回報', isMgr ? mineToday : myVisits, true));
+          bodyKids.push(listOrLoading('今日已回報', isMgr ? mineToday : myVisits, true));
         } else {
           var sel = el('select', { class: 'select', onchange: async function (e) {
             filterId = e.target.value;
-            await reloadLists();
+            var c = ctx.cacheGet(listKey());
+            haveLists = !!c;
+            if (c) applyLists(c);
+            listsLoading = true;
+            render();
+            try { await reloadLists(); } catch (err) { ctx.toast(err.message || '載入失敗'); }
+            listsLoading = false;
             render();
           } });
           sel.appendChild(el('option', { value: '', text: '全部業務' }));
           storeStaffOptions(sel);
           if (filterId) sel.value = filterId;
-          bodyKids.push(listBlock('全店今日看車', allVisits, false, el('div', { class: 'field' },
+          bodyKids.push(listOrLoading('全店今日看車', allVisits, false, el('div', { class: 'field' },
             el('label', { class: 'label', text: '篩選業務' }), sel
           )));
           if (unreported.length) {
@@ -317,8 +460,47 @@
         });
       }
 
-      await reloadLists();
+      // 表單立刻出現；選項、今日清單、庫存在背景更新
       render();
+      // 一次連線拿「選項＋今日清單＋庫存」（主管有篩選時清單另外查）
+      var bootP = ctx.batch([
+        { action: 'options' },
+        { action: 'listToday', date: ctx.today() },
+        { action: 'inventory' }
+      ]);
+      function part(i) { return bootP.then(function (r) { if (r[i] instanceof Error) throw r[i]; return r[i]; }); }
+      stock.load(true, function () { return part(2); });
+      var optP = part(0).then(function (fresh) {
+        if (JSON.stringify(fresh) !== JSON.stringify(options)) {
+          options = fresh;
+          ctx.cacheSet('options', fresh);
+          return true;
+        }
+        ctx.cacheSet('options', fresh);
+        return false;
+      }).catch(function (err) { console.warn(err); return false; });
+      var firstList = filterId ? reloadLists() : (function () {
+        var seq = ++listSeq;
+        var key = listKey();
+        return part(1).then(function (r) {
+          var d = isMgr
+            ? { myVisits: r.visits || [], allVisits: r.visits || [], unreported: r.unreported || [] }
+            : { myVisits: r.visits || [] };
+          ctx.cacheSet(key, d);
+          if (seq !== listSeq) return;
+          applyLists(d);
+          haveLists = true;
+          listsLoading = false;
+        });
+      })();
+      var listP = firstList.then(function () { return true; }).catch(function (err) {
+        console.warn(err);
+        listsLoading = false;
+        ctx.toast('今日清單載入失敗：' + (err.message || '請稍後再試'));
+        return true;
+      });
+      optP.then(function (changed) { if (changed) render(); });
+      listP.then(function () { render(); });
     }
   });
 })();

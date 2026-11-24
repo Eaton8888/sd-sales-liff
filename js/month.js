@@ -69,16 +69,23 @@
       var viewingName = '';
       var data = null;
 
-      async function load() {
-        var payload = { month: month };
-        if (staffId) payload.staffId = staffId;
-        data = await ctx.api('monthStats', payload);
-      }
+      var loading = false;
+      var seq = 0;
 
       function prevDisabled() { return false; }
       function nextDisabled() { return month >= maxMonth; }
 
       function render() {
+        if (!data) {
+          SD.setApp([
+            SD.topbar(me),
+            SD.pageHead('本月我的成績', 'My month', SD.ICO.chart),
+            el('div', { class: 'wrap' },
+              el('div', { class: 'month-nav' }, el('div', { class: 'label', text: SD.ymLabel(month) })),
+              SD.loadingNote('讀取中…'), SD.skeleton(5))
+          ]);
+          return;
+        }
         var stats = data.stats || {};
         var goal = data.goal || stats.goal || { set: false };
         var prevM = data.previousMonth;
@@ -91,6 +98,7 @@
         );
 
         var kids = [nav];
+        if (loading) kids.push(SD.loadingNote('更新中…'));
 
         if (isMgr && data.scope === 'self') {
           kids.push(el('button', { class: 'back-link', type: 'button', text: '← 返回全店', onclick: function () { staffId = ''; viewingName = ''; refresh(); } }));
@@ -169,13 +177,27 @@
         ]);
       }
 
+      // 先顯示上次的資料（或骨架），背景拿最新的再更新畫面
       async function refresh() {
-        SD.setApp([SD.topbar(me), SD.bootScreen('載入中…')]);
+        var my = ++seq;
+        var payload = { month: month };
+        if (staffId) payload.staffId = staffId;
+        var name = 'month_' + month + '_' + (staffId || '');
+        data = ctx.cacheGet(name);
+        loading = true;
+        render();
         try {
-          await load();
+          var fresh = await ctx.api('monthStats', payload);
+          ctx.cacheSet(name, fresh);
+          if (my !== seq) return;
+          data = fresh;
+          loading = false;
           render();
         } catch (err) {
-          SD.setApp([SD.topbar(me), SD.errorScreen('無法載入本月成績', err.message, refresh)]);
+          if (my !== seq) return;
+          loading = false;
+          if (data) { render(); ctx.toast('更新失敗：' + (err.message || '請稍後再試')); }
+          else SD.setApp([SD.topbar(me), SD.errorScreen('無法載入本月成績', err.message, refresh)]);
         }
       }
 

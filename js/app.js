@@ -328,6 +328,9 @@
     if (params.get('disabled') === '1') {
       throw apiError('此帳號已停用，請聯絡主管。', 'DISABLED');
     }
+    if (params.get('oldapi') === '1' && (action === 'batch' || action === 'inventory')) {
+      throw apiError('未知的操作。', 'UNKNOWN_ACTION'); // 模擬尚未重新部署的舊後端
+    }
     var db = store();
     var me0 = currentMockStaff();
     var me = Object.assign({}, me0, { status: '啟用' });
@@ -348,6 +351,28 @@
       return Object.assign({}, hit, { status: '啟用' });
     }
     if (action === 'options') return db.options;
+    if (action === 'inventory') {
+      // 模擬伺服器：只回在庫車；底價等內部欄位只給主管
+      var inv = typeof global.SD_MOCK_INVENTORY === 'function' ? global.SD_MOCK_INVENTORY() : [];
+      var PUB = ['id', 'status', 'brand', 'model', 'cc', 'color', 'interior', 'year', 'mileage', 'price', 'priceText', 'plate', 'factoryCert', 'cert', 'original'];
+      var mgr = me.role === '主管';
+      return {
+        manager: mgr,
+        updatedAt: nowStr(),
+        cars: inv.filter(function (c) { return c.status === '在庫'; }).map(function (c) {
+          if (mgr) return Object.assign({}, c);
+          var o = {};
+          PUB.forEach(function (k) { if (k in c) o[k] = c[k]; });
+          return o;
+        })
+      };
+    }
+    if (action === 'batch') {
+      return (payload.calls || []).map(function (c) {
+        try { return { ok: true, data: mockApi(c.action, c, idToken) }; }
+        catch (e) { return { ok: false, error: e.message, code: e.code }; }
+      });
+    }
 
     function canSee(v, filterId, forManagerAll) {
       if (me.role === '主管') {
@@ -368,7 +393,9 @@
         stockId: payload.stockId || '', budgetRange: payload.budgetRange || '',
         heat: payload.heat, result: payload.result,
         nextContactDate: payload.nextContactDate || '', note: payload.note || '',
-        updatedAt: nowStr()
+        updatedAt: nowStr(),
+        carPlate: String(payload.carPlate || '').toUpperCase(),
+        carPrice: payload.carPrice === '' || payload.carPrice == null ? '' : Number(payload.carPrice)
       };
       db.visits.unshift(rec);
       return rec;
@@ -378,7 +405,7 @@
       if (!found) throw apiError('找不到這筆看車紀錄。', 'NOT_FOUND');
       if (me.role !== '主管' && found.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
       if (me.role !== '主管' && found.visitDate !== todayStr()) throw apiError('已超過可修改時間，僅能修改當日紀錄，請洽主管協助。', 'FORBIDDEN');
-      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'stockId', 'budgetRange', 'heat', 'result', 'nextContactDate', 'note'].forEach(function (k) {
+      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'stockId', 'budgetRange', 'heat', 'result', 'nextContactDate', 'note', 'carPlate', 'carPrice'].forEach(function (k) {
         if (Object.prototype.hasOwnProperty.call(payload, k) && payload[k] !== undefined) found[k] = payload[k];
       });
       found.updatedAt = nowStr();
@@ -490,13 +517,86 @@
 
   var idToken = '';
   var meCache = null;
+  var CACHE_SUB = '';
+  // LIFF 初始化完成（拿到 idToken）前，API 先排隊等待；畫面可先用快取顯示
+  var liffReadyResolve, liffReadyReject;
+  var liffReady = new Promise(function (res, rej) { liffReadyResolve = res; liffReadyReject = rej; });
+  liffReady.catch(function () {});
 
   async function api(action, payload) {
     if (MOCK) {
-      await new Promise(function (r) { setTimeout(r, 180); });
+      await new Promise(function (r) { setTimeout(r, MOCK_DELAY); });
       return mockApi(action, payload || {}, idToken);
     }
+    await liffReady;
     return realApi(action, payload, idToken);
+  }
+  var MOCK_DELAY = Number(params.get('delay') || 180);
+
+  /** 合併請求：一次連線拿多種資料。回傳陣列，每項是資料或 Error。
+   *  伺服器還沒更新（不認得 batch）時，自動改成分開送。 */
+  async function apiBatch(calls) {
+    try {
+      var res = await api('batch', { calls: calls });
+      if (!Array.isArray(res)) throw apiError('bad batch', 'SERVER');
+      return res.map(function (r) { return r && r.ok ? r.data : apiError((r && r.error) || '操作失敗', (r && r.code) || 'SERVER'); });
+    } catch (err) {
+      if (err.code !== 'UNKNOWN_ACTION' && err.code !== 'SERVER') throw err;
+      return Promise.all(calls.map(function (c) {
+        var p = Object.assign({}, c); delete p.action;
+        return api(c.action, p).catch(function (e) { return e; });
+      }));
+    }
+  }
+
+  /* ---------- 本機快取（先顯示上次資料，背景再更新） ---------- */
+  var CACHE_PREFIX = 'sd_c_';
+  function cacheKey(name) { return CACHE_PREFIX + (CACHE_SUB || 'anon') + '_' + name; }
+  function cacheGet(name, maxAgeMs) {
+    try {
+      var o = JSON.parse(localStorage.getItem(cacheKey(name)) || 'null');
+      if (!o || !('data' in o)) return null;
+      if (maxAgeMs && Date.now() - o.ts > maxAgeMs) return null;
+      return o.data;
+    } catch (e) { return null; }
+  }
+  function cacheSet(name, data) {
+    try { localStorage.setItem(cacheKey(name), JSON.stringify({ ts: Date.now(), data: data })); } catch (e) {}
+  }
+  function cachePrune() {
+    try {
+      var limit = Date.now() - 3 * 86400 * 1000;
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(CACHE_PREFIX) !== 0) continue;
+        var o = JSON.parse(localStorage.getItem(k) || 'null');
+        if (!o || o.ts < limit) localStorage.removeItem(k);
+      }
+    } catch (e) {}
+  }
+  /** 先回傳快取（若有）給 onData，同時向伺服器拿最新資料，拿到後再呼叫 onData。 */
+  function swr(name, action, payload, onData) {
+    var cached = cacheGet(name, 3 * 86400 * 1000);
+    var hadCache = cached != null;
+    if (hadCache) { try { onData(cached, true); } catch (e) { console.error(e); } }
+    var p = (typeof action === 'function' ? action() : api(action, payload)).then(function (fresh) {
+      cacheSet(name, fresh);
+      if (!hadCache || JSON.stringify(fresh) !== JSON.stringify(cached)) onData(fresh, false);
+      return fresh;
+    });
+    return { cached: hadCache, promise: p };
+  }
+
+  function waitForSdk(ms) {
+    return new Promise(function (resolve) {
+      if (global.liff) { resolve(true); return; }
+      var t0 = Date.now();
+      (function tick() {
+        if (global.liff) { resolve(true); return; }
+        if (Date.now() - t0 > ms) { resolve(false); return; }
+        setTimeout(tick, 25);
+      })();
+    });
   }
 
   async function initLiff(liffId) {
@@ -507,8 +607,10 @@
         isInClient: function () { return false; },
         isLoggedIn: function () { return true; }
       };
-      return;
+      liffReadyResolve();
+      return {};
     }
+    await waitForSdk(15000);
     if (!global.liff) throw apiError('無法載入 LINE 元件，請從官方帳號重新開啟。', 'INVALID_TOKEN');
     await global.liff.init({ liffId: liffId });
     if (!global.liff.isLoggedIn()) {
@@ -517,6 +619,7 @@
     }
     idToken = global.liff.getIDToken() || '';
     if (!idToken) throw apiError('請在 LINE 內重新開啟本頁，無法確認身分。', 'INVALID_TOKEN');
+    liffReadyResolve();
     return {};
   }
 
@@ -562,60 +665,134 @@
     );
   }
 
+  var ME_LAST = 'sd_me_last';
+  function ctxFor(me) {
+    return {
+      me: me, api: api, mock: MOCK, close: closeWindow, today: todayStr, month: monthStr, toast: toast,
+      swr: swr, cacheGet: cacheGet, cacheSet: cacheSet, batch: apiBatch
+    };
+  }
+  function handleMeError(err, opts) {
+    try { localStorage.removeItem(ME_LAST); } catch (e) {}
+    if (err.code === 'UNBOUND') {
+      setApp(bindForm(function (data) {
+        meCache = data;
+        saveMe(data);
+        opts.onReady(ctxFor(data));
+      }));
+      return true;
+    }
+    if (err.code === 'DISABLED') { setApp(errorScreen('帳號已停用', err.message)); return true; }
+    if (err.code === 'INVALID_TOKEN') { setApp(errorScreen('請重新登入', err.message)); return true; }
+    return false;
+  }
+  function currentSub() {
+    try {
+      var tok = (!MOCK && global.liff && global.liff.getDecodedIDToken) ? global.liff.getDecodedIDToken() : null;
+      if (tok && tok.sub) return tok.sub;
+    } catch (e) {}
+    return MOCK ? 'mock-' + mockRole() : '';
+  }
+  function saveMe(data) {
+    var sub = currentSub();
+    if (!sub) return;
+    try { localStorage.setItem(ME_LAST, JSON.stringify({ sub: sub, ts: Date.now(), data: data })); } catch (e) {}
+  }
+
+  function injectSkeletonCss() {
+    if (document.getElementById('sd-sk-css')) return;
+    var st = document.createElement('style');
+    st.id = 'sd-sk-css';
+    st.textContent = '.sk{padding:4px 0}.sk-block{height:64px;border-radius:10px;margin:0 0 12px;' +
+      'background:linear-gradient(90deg,rgba(127,127,127,.12) 25%,rgba(127,127,127,.22) 37%,rgba(127,127,127,.12) 63%);' +
+      'background-size:400% 100%;animation:sdsk 1.2s ease infinite}.sk-tall{height:110px}' +
+      '@keyframes sdsk{0%{background-position:100% 50%}100%{background-position:0 50%}}' +
+      '.sk-note{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.65;margin:0 0 10px}' +
+      '.sk-dot{width:6px;height:6px;border-radius:50%;background:#d7192a;animation:sdpulse 1s ease infinite}' +
+      '@keyframes sdpulse{50%{opacity:.25}}';
+    document.head.appendChild(st);
+  }
+
   async function start(opts) {
     PAGE = opts.page;
-    var app = document.getElementById('app');
+    injectSkeletonCss();
+    cachePrune();
+    // 1) 這支手機開過：直接用上次的業務資料畫出頁面，LINE 登入和 API 在背景進行
+    var last = null;
+    try { last = JSON.parse(localStorage.getItem(ME_LAST) || 'null'); } catch (e) {}
+    if (!last && !MOCK) {
+      // 舊版存的 sd_me_<sub> 也拿來用，更新後第一次開就能秒開
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('sd_me_') === 0 && k !== ME_LAST) {
+            var o = JSON.parse(localStorage.getItem(k) || 'null');
+            if (o && o.data) { last = { sub: k.slice(6), ts: o.ts, data: o.data }; break; }
+          }
+        }
+      } catch (e) {}
+    }
+    if (MOCK && last && last.sub !== 'mock-' + mockRole()) last = null;
+    if (params.get('nocache') === '1') last = null;
+    if (last && last.data && last.sub && (Date.now() - last.ts) < 14 * 86400 * 1000) {
+      CACHE_SUB = last.sub;
+      meCache = last.data;
+      var initP = initLiff(opts.liffId);
+      try { opts.onReady(ctxFor(last.data)); } catch (e) { console.error(e); }
+      try {
+        var r = await initP;
+        if (r && r.redirected) return;
+        var sub = currentSub();
+        if (sub && sub !== last.sub) {
+          // 換了 LINE 帳號：清掉記住的資料重新開啟
+          try { localStorage.removeItem(ME_LAST); } catch (e) {}
+          location.reload();
+          return;
+        }
+        var fresh = await api('me');
+        saveMe(fresh);
+        meCache = fresh;
+        if (fresh.role !== last.data.role || fresh.staffId !== last.data.staffId || fresh.status !== last.data.status) {
+          location.reload();
+        }
+      } catch (err) {
+        console.error(err);
+        liffReadyReject(err);
+        if (!handleMeError(err, opts)) toast(err.message || '連線失敗，請稍後再試');
+      }
+      return;
+    }
+    // 2) 第一次開：照原流程（登入 → 讀業務資料）
     setApp(bootScreen('載入中…'));
     try {
       var init = await initLiff(opts.liffId);
       if (init && init.redirected) return;
+      CACHE_SUB = currentSub() || 'anon';
       var profile;
-      // 6 小時內開過就先用記住的業務資料，背景再更新，減少一次等待
-      var meKey = '';
-      try {
-        var tok = (!MOCK && global.liff && global.liff.getDecodedIDToken) ? global.liff.getDecodedIDToken() : null;
-        if (tok && tok.sub) meKey = 'sd_me_' + tok.sub;
-      } catch (e) {}
-      if (meKey) {
-        try {
-          var cached = JSON.parse(localStorage.getItem(meKey) || 'null');
-          if (cached && cached.data && (Date.now() - cached.ts) < 6 * 3600 * 1000) {
-            meCache = cached.data;
-            api('me').then(function (fresh) {
-              try { localStorage.setItem(meKey, JSON.stringify({ ts: Date.now(), data: fresh })); } catch (e) {}
-            }).catch(function () { try { localStorage.removeItem(meKey); } catch (e) {} });
-            opts.onReady({ me: cached.data, api: api, mock: MOCK, close: closeWindow, today: todayStr, month: monthStr, toast: toast });
-            return;
-          }
-        } catch (e) {}
-      }
       try {
         profile = await api('me');
-        if (meKey) { try { localStorage.setItem(meKey, JSON.stringify({ ts: Date.now(), data: profile })); } catch (e) {} }
+        saveMe(profile);
       } catch (err) {
-        if (err.code === 'UNBOUND') {
-          setApp(bindForm(function (data) {
-            meCache = data;
-            opts.onReady({ me: data, api: api, mock: MOCK, close: closeWindow, today: todayStr, month: monthStr, toast: toast });
-          }));
-          return;
-        }
-        if (err.code === 'DISABLED') {
-          setApp(errorScreen('帳號已停用', err.message));
-          return;
-        }
-        if (err.code === 'INVALID_TOKEN') {
-          setApp(errorScreen('請重新登入', err.message));
-          return;
-        }
+        if (handleMeError(err, opts)) return;
         throw err;
       }
       meCache = profile;
-      opts.onReady({ me: profile, api: api, mock: MOCK, close: closeWindow, today: todayStr, month: monthStr, toast: toast });
+      opts.onReady(ctxFor(profile));
     } catch (err) {
       console.error(err);
+      liffReadyReject(err);
       setApp(errorScreen('無法開啟頁面', err.message || '請稍後再試。'));
     }
+  }
+
+  /** 資料還沒到時的骨架畫面（灰色方塊），比空白轉圈圈更快看到版面 */
+  function skeleton(rows) {
+    var kids = [];
+    for (var i = 0; i < (rows || 4); i++) kids.push(el('div', { class: 'sk-block' + (i === 0 ? ' sk-tall' : '') }));
+    return el('div', { class: 'sk', 'aria-busy': 'true', 'aria-label': '載入中' }, kids);
+  }
+  function loadingNote(text) {
+    return el('div', { class: 'sk-note' }, el('span', { class: 'sk-dot' }), text || '更新中…');
   }
 
   function closeWindow() {
@@ -732,6 +909,7 @@
     var rows = [
       ['客戶稱呼', rec.customerName],
       ['看車車款', rec.carModel],
+      ['車牌', rec.carPlate],
       ['客戶來源', rec.customerSource],
       ['客戶熱度', rec.heat ? heatLabel(rec.heat) : ''],
       ['結果', rec.result],
@@ -749,6 +927,8 @@
     var rows = [
       flexRow('客戶稱呼', rec.customerName),
       flexRow('看車車款', rec.carModel),
+      flexRow('車牌', rec.carPlate),
+      flexRow('售價', rec.carPrice !== '' && rec.carPrice != null ? rec.carPrice + ' 萬' : ''),
       flexRow('客戶來源', rec.customerSource),
       flexRow('客戶熱度', rec.heat ? heatLabel(rec.heat) : ''),
       flexRow('結果', rec.result),
@@ -774,10 +954,22 @@
         wrap: true
       });
     }
+    var bubble = flexBubble(visitTitle(isUpdate), rows);
+    var stockUrl = stockLiffUrl();
+    if (stockUrl) {
+      bubble.styles.footer = { backgroundColor: '#0A0A0A' };
+      bubble.footer = {
+        type: 'box', layout: 'vertical', backgroundColor: '#0A0A0A', paddingAll: '12px', paddingTop: '0px',
+        contents: [{
+          type: 'button', style: 'secondary', height: 'sm', color: '#2A2A2A',
+          action: { type: 'uri', label: '🚗 查在庫車', uri: stockUrl }
+        }]
+      };
+    }
     return {
       type: 'flex',
       altText: visitAltText(rec, isUpdate),
-      contents: flexBubble(visitTitle(isUpdate), rows)
+      contents: bubble
     };
   }
 
@@ -818,6 +1010,50 @@
     };
   }
 
+  function stockLiffUrl() {
+    var id = (cfg.liffIds || {}).report;
+    return id ? 'https://liff.line.me/' + id + '?view=stock' : '';
+  }
+
+  /** 把一張卡片分享給客戶：優先用「分享對象選擇器」，不能用時改送到目前聊天室。 */
+  async function shareFlex(flexMsg) {
+    if (MOCK) {
+      console.info('[SD] mock：shareTargetPicker 原本會分享：');
+      console.info(JSON.stringify(flexMsg));
+      toast('已分享（模擬）');
+      return { shared: 'mock' };
+    }
+    try { await liffReady; } catch (e) {}
+    var liffObj = global.liff;
+    if (!liffObj) { toast('請在 LINE 內開啟'); return { skipped: 'no_liff' }; }
+    var canPick = false;
+    try { canPick = typeof liffObj.isApiAvailable === 'function' && liffObj.isApiAvailable('shareTargetPicker'); } catch (e) {}
+    if (canPick) {
+      try {
+        var res = await liffObj.shareTargetPicker([flexMsg], { isMultiple: true });
+        if (res) { toast('已分享'); return { shared: 'picker' }; }
+        return { skipped: 'cancel' };
+      } catch (err) {
+        console.warn('[SD] shareTargetPicker 失敗', err);
+        toast('分享失敗（' + String((err && (err.code || err.message)) || '').slice(0, 40) + '）');
+        return { skipped: 'picker_error' };
+      }
+    }
+    // 備案：送到目前開啟的聊天室
+    var ctx = typeof liffObj.getContext === 'function' ? (liffObj.getContext() || {}) : {};
+    if (liffObj.isInClient && liffObj.isInClient() && CHAT_CTX_OK[ctx.type || ''] && typeof liffObj.sendMessages === 'function') {
+      try {
+        await liffObj.sendMessages([flexMsg]);
+        toast('已傳到目前聊天室（分享選擇器未開啟）');
+        return { shared: 'chat' };
+      } catch (err) {
+        console.warn('[SD] sendMessages 失敗', err);
+      }
+    }
+    toast('無法分享：請在 LINE Developers 開啟 Share target picker');
+    return { skipped: 'unavailable' };
+  }
+
   function packMessages(flexMsg, plain) {
     return { flex: flexMsg, text: plain };
   }
@@ -850,6 +1086,7 @@
         console.info(JSON.stringify(pack && pack.flex ? pack.flex : pack, null, 2));
         return { skipped: 'mock' };
       }
+      try { await liffReady; } catch (e) {}
       var liffObj = global.liff;
       if (!liffObj || typeof liffObj.isInClient !== 'function' || !liffObj.isInClient()) {
         console.info('[SD] 非 LINE 內建瀏覽器，略過 sendMessages');
@@ -927,6 +1164,9 @@
     pageHead: pageHead,
     setApp: setApp,
     bootScreen: bootScreen,
+    skeleton: skeleton,
+    loadingNote: loadingNote,
+    swr: swr,
     errorScreen: errorScreen,
     toast: toast,
     todayStr: todayStr,
@@ -939,6 +1179,8 @@
     closeWindow: closeWindow,
     postVisitToChat: postVisitToChat,
     postDailyNoteToChat: postDailyNoteToChat,
+    shareFlex: shareFlex,
+    stockLiffUrl: stockLiffUrl,
     visitFlexMessage: visitFlexMessage,
     noteFlexMessage: noteFlexMessage
   };
