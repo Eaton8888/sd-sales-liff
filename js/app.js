@@ -566,8 +566,28 @@
       var init = await initLiff(opts.liffId);
       if (init && init.redirected) return;
       var profile;
+      // 6 小時內開過就先用記住的業務資料，背景再更新，減少一次等待
+      var meKey = '';
+      try {
+        var tok = (!MOCK && global.liff && global.liff.getDecodedIDToken) ? global.liff.getDecodedIDToken() : null;
+        if (tok && tok.sub) meKey = 'sd_me_' + tok.sub;
+      } catch (e) {}
+      if (meKey) {
+        try {
+          var cached = JSON.parse(localStorage.getItem(meKey) || 'null');
+          if (cached && cached.data && (Date.now() - cached.ts) < 6 * 3600 * 1000) {
+            meCache = cached.data;
+            api('me').then(function (fresh) {
+              try { localStorage.setItem(meKey, JSON.stringify({ ts: Date.now(), data: fresh })); } catch (e) {}
+            }).catch(function () { try { localStorage.removeItem(meKey); } catch (e) {} });
+            opts.onReady({ me: cached.data, api: api, mock: MOCK, close: closeWindow, today: todayStr, month: monthStr, toast: toast });
+            return;
+          }
+        } catch (e) {}
+      }
       try {
         profile = await api('me');
+        if (meKey) { try { localStorage.setItem(meKey, JSON.stringify({ ts: Date.now(), data: profile })); } catch (e) {} }
       } catch (err) {
         if (err.code === 'UNBOUND') {
           setApp(bindForm(function (data) {
@@ -607,6 +627,293 @@
     return { text: '較上月 ' + n + (unit || ''), cls: 'down' };
   }
 
+
+  /* ---------- 聊天室紀錄（liff.sendMessages） ---------- */
+  var CHAT_CTX_OK = { utou: 1, group: 1, room: 1, square_chat: 1 };
+  var HEAT_LABEL = { A: 'A（熱）', B: 'B（溫）', C: 'C（冷）' };
+
+  function clipText(s, n) {
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (s.length <= n) return s;
+    return s.slice(0, Math.max(0, n - 1)) + '…';
+  }
+
+  function clipRaw(s, n) {
+    s = String(s == null ? '' : s);
+    if (s.length <= n) return s;
+    return s.slice(0, Math.max(0, n - 1)) + '…';
+  }
+
+  function heatLabel(v) {
+    var s = String(v || '').trim();
+    return HEAT_LABEL[s] || s;
+  }
+
+  function flexAccentBar() {
+    return {
+      type: 'box',
+      layout: 'vertical',
+      contents: [{ type: 'filler' }],
+      height: '3px',
+      backgroundColor: '#D40000',
+      margin: 'md'
+    };
+  }
+
+  function flexRow(label, value) {
+    var v = String(value == null ? '' : value).trim();
+    if (!v) return null;
+    return {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'md',
+      contents: [
+        { type: 'text', text: label, size: 'sm', color: '#999999', flex: 3, wrap: true },
+        { type: 'text', text: v, size: 'sm', color: '#FFFFFF', flex: 5, wrap: true, align: 'end', weight: 'bold' }
+      ]
+    };
+  }
+
+  function flexHeader(title) {
+    return {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0A0A0A',
+      paddingAll: '16px',
+      paddingBottom: '8px',
+      contents: [
+        { type: 'text', text: '上達汽車', size: 'xxs', color: '#AAAAAA', weight: 'bold' },
+        { type: 'text', text: title, size: 'lg', weight: 'bold', color: '#FFFFFF', margin: 'sm', wrap: true },
+        flexAccentBar()
+      ]
+    };
+  }
+
+  function flexBubble(title, bodyContents) {
+    return {
+      type: 'bubble',
+      size: 'kilo',
+      styles: {
+        header: { backgroundColor: '#0A0A0A' },
+        body: { backgroundColor: '#0A0A0A' }
+      },
+      header: flexHeader(title),
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#0A0A0A',
+        paddingAll: '16px',
+        paddingTop: '8px',
+        spacing: 'sm',
+        contents: bodyContents
+      }
+    };
+  }
+
+  function visitTitle(isUpdate) {
+    return isUpdate ? '✅ 已更新看車' : '✅ 已回報看車';
+  }
+
+  function visitAltText(rec, isUpdate) {
+    var title = isUpdate ? '已更新看車' : '已回報看車';
+    var bits = [rec && rec.customerName, rec && rec.carModel].filter(function (x) {
+      return x && String(x).trim();
+    });
+    return clipText(bits.length ? (title + '：' + bits.join(' ')) : title, 400);
+  }
+
+  function visitPlainText(rec, isUpdate) {
+    rec = rec || {};
+    var lines = [visitTitle(isUpdate)];
+    var rows = [
+      ['客戶稱呼', rec.customerName],
+      ['看車車款', rec.carModel],
+      ['客戶來源', rec.customerSource],
+      ['客戶熱度', rec.heat ? heatLabel(rec.heat) : ''],
+      ['結果', rec.result],
+      ['下次聯絡日', rec.nextContactDate]
+    ];
+    rows.forEach(function (r) {
+      if (r[1] && String(r[1]).trim()) lines.push(r[0] + '：' + String(r[1]).trim());
+    });
+    if (rec.visitId) lines.push('紀錄編號：' + rec.visitId);
+    return clipRaw(lines.join('\n'), 5000);
+  }
+
+  function visitFlexMessage(rec, isUpdate) {
+    rec = rec || {};
+    var rows = [
+      flexRow('客戶稱呼', rec.customerName),
+      flexRow('看車車款', rec.carModel),
+      flexRow('客戶來源', rec.customerSource),
+      flexRow('客戶熱度', rec.heat ? heatLabel(rec.heat) : ''),
+      flexRow('結果', rec.result),
+      flexRow('下次聯絡日', rec.nextContactDate)
+    ].filter(Boolean);
+    if (!rows.length) {
+      rows.push({
+        type: 'text',
+        text: '回報已送出',
+        size: 'sm',
+        color: '#FFFFFF',
+        wrap: true
+      });
+    }
+    if (rec.visitId) {
+      rows.push({ type: 'separator', color: '#333333', margin: 'md' });
+      rows.push({
+        type: 'text',
+        text: '紀錄編號　' + rec.visitId,
+        size: 'xxs',
+        color: '#888888',
+        margin: 'md',
+        wrap: true
+      });
+    }
+    return {
+      type: 'flex',
+      altText: visitAltText(rec, isUpdate),
+      contents: flexBubble(visitTitle(isUpdate), rows)
+    };
+  }
+
+  function noteAltText(rec) {
+    rec = rec || {};
+    var preview = clipText(rec.note || '', 40);
+    var date = rec.date || todayStr();
+    var base = '今日總結已送出：' + date;
+    return clipText(preview ? (base + ' ' + preview) : base, 400);
+  }
+
+  function notePlainText(rec) {
+    rec = rec || {};
+    var lines = ['📝 今日總結已送出', '日期：' + (rec.date || todayStr())];
+    if (rec.note && String(rec.note).trim()) lines.push(clipText(rec.note, 400));
+    return clipRaw(lines.join('\n'), 5000);
+  }
+
+  function noteFlexMessage(rec) {
+    rec = rec || {};
+    var body = [flexRow('日期', rec.date || todayStr())].filter(Boolean);
+    var preview = clipText(rec.note || '', 120);
+    if (preview) {
+      body.push({
+        type: 'text',
+        text: preview,
+        size: 'sm',
+        color: '#FFFFFF',
+        wrap: true,
+        margin: 'md',
+        maxLines: 5
+      });
+    }
+    return {
+      type: 'flex',
+      altText: noteAltText(rec),
+      contents: flexBubble('📝 今日總結已送出', body)
+    };
+  }
+
+  function packMessages(flexMsg, plain) {
+    return { flex: flexMsg, text: plain };
+  }
+
+  async function hasChatWritePermission() {
+    var liffObj = global.liff;
+    if (!liffObj || !liffObj.permission || typeof liffObj.permission.query !== 'function') {
+      return true;
+    }
+    try {
+      var st = await liffObj.permission.query('chat_message.write');
+      var state = st && st.state;
+      if (state === 'granted') return true;
+      if (state === 'prompt' && typeof liffObj.permission.requestAll === 'function') {
+        await liffObj.permission.requestAll();
+        var again = await liffObj.permission.query('chat_message.write');
+        return !!(again && again.state === 'granted');
+      }
+      return false;
+    } catch (err) {
+      console.warn('[SD] 權限查詢失敗，改嘗試直接送出', err);
+      return true;
+    }
+  }
+
+  async function postChatRecord(pack) {
+    try {
+      if (MOCK) {
+        console.info('[SD] mock：略過 sendMessages，原本會送出：');
+        console.info(JSON.stringify(pack && pack.flex ? pack.flex : pack, null, 2));
+        return { skipped: 'mock' };
+      }
+      var liffObj = global.liff;
+      if (!liffObj || typeof liffObj.isInClient !== 'function' || !liffObj.isInClient()) {
+        console.info('[SD] 非 LINE 內建瀏覽器，略過 sendMessages');
+        return { skipped: 'not_in_client' };
+      }
+      var ctx = typeof liffObj.getContext === 'function' ? (liffObj.getContext() || {}) : {};
+      var typ = ctx.type || '';
+      if (!CHAT_CTX_OK[typ]) {
+        console.info('[SD] 非聊天室開啟（context=' + typ + '），略過 sendMessages');
+        toast('聊天室紀錄未送出（請從聊天室選單開啟）');
+        return { skipped: 'bad_context' };
+      }
+      var granted = await hasChatWritePermission();
+      if (!granted) {
+        console.warn('[SD] 未授權 chat_message.write，略過 sendMessages');
+        toast('聊天室紀錄未送出（未授權傳訊息）');
+        return { skipped: 'no_permission' };
+      }
+      if (typeof liffObj.sendMessages !== 'function') {
+        console.warn('[SD] 此環境不支援 sendMessages');
+        return { skipped: 'unsupported' };
+      }
+      try {
+        await liffObj.sendMessages([pack.flex]);
+        return { sent: 'flex' };
+      } catch (firstErr) {
+        console.warn('[SD] 第一次送出失敗', firstErr);
+        // 舊授權沒有 chat_message.write：要求重新授權後再試一次
+        try {
+          if (liffObj.permission && typeof liffObj.permission.requestAll === 'function') {
+            await liffObj.permission.requestAll();
+          }
+          await liffObj.sendMessages([pack.flex]);
+          return { sent: 'flex' };
+        } catch (retryErr) {
+          console.warn('[SD] 重新授權後仍失敗', retryErr);
+          var code = String((retryErr && (retryErr.code || retryErr.status)) || '');
+          var msg = String((retryErr && retryErr.message) || retryErr || '');
+          if (/403|permission|forbidden|scope|auth/i.test(code + ' ' + msg)) {
+            try { sessionStorage.setItem('sd_relogin', '1'); } catch (e) {}
+            if (!global.__sdRelogged && typeof liffObj.logout === 'function') {
+              global.__sdRelogged = true;
+              toast('需要重新授權，請按「許可」。這筆已存檔，不用重填');
+              setTimeout(function () { try { liffObj.logout(); liffObj.login({ redirectUri: location.href }); } catch (e) {} }, 1500);
+              return { skipped: 'relogin' };
+            }
+          }
+          toast('聊天室紀錄未送出（' + (code || '') + ' ' + msg.slice(0, 60) + '）');
+          return { skipped: 'send_failed', code: code, msg: msg };
+        }
+      }
+    } catch (err) {
+      console.warn('[SD] sendMessages 發生錯誤', err);
+      try { toast('聊天室紀錄未送出'); } catch (ignore) {}
+      return { skipped: 'error' };
+    }
+  }
+
+  async function postVisitToChat(rec, isUpdate) {
+    var pack = packMessages(visitFlexMessage(rec, isUpdate), visitPlainText(rec, isUpdate));
+    return postChatRecord(pack);
+  }
+
+  async function postDailyNoteToChat(rec) {
+    var pack = packMessages(noteFlexMessage(rec), notePlainText(rec));
+    return postChatRecord(pack);
+  }
+
   global.SD = {
     start: start,
     el: el,
@@ -625,6 +932,10 @@
     pct: pct,
     vsText: vsText,
     isMock: function () { return MOCK; },
-    closeWindow: closeWindow
+    closeWindow: closeWindow,
+    postVisitToChat: postVisitToChat,
+    postDailyNoteToChat: postDailyNoteToChat,
+    visitFlexMessage: visitFlexMessage,
+    noteFlexMessage: noteFlexMessage
   };
 })(window);
