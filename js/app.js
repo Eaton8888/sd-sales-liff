@@ -217,7 +217,7 @@
       '角色': ['業務', '主管'],
       '狀態': ['啟用', '停用'],
       '客戶來源': ['FB廣告', 'IG廣告', 'LINE', '來電', '現場', '介紹', '其他'],
-      '客戶熱度': ['A', 'B', 'C'],
+      '客戶熱度': ['A', 'B', 'C', 'D'],
       '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
     };
     function V(id, staffId, name, date, created, customer, phone, source, car, stock, budget, heat, result, next, note) {
@@ -709,7 +709,17 @@
       '@keyframes sdsk{0%{background-position:100% 50%}100%{background-position:0 50%}}' +
       '.sk-note{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.65;margin:0 0 10px}' +
       '.sk-dot{width:6px;height:6px;border-radius:50%;background:#d7192a;animation:sdpulse 1s ease infinite}' +
-      '@keyframes sdpulse{50%{opacity:.25}}';
+      '@keyframes sdpulse{50%{opacity:.25}}' +
+      '.badge-heat-D{color:var(--dim);border-style:dashed;opacity:.85}' +
+      '.heat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}' +
+      '.heat-opt{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:10px 12px;min-height:84px;' +
+      'border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:#fff;font:inherit;cursor:pointer}' +
+      '.heat-opt .hl{font-weight:700;font-size:15px}' +
+      '.heat-opt .hd{font-size:12px;line-height:1.45;color:var(--dim)}' +
+      '.heat-opt.is-on{border-color:var(--accent);background:rgba(215,25,42,.16);box-shadow:inset 0 0 0 1px var(--accent)}' +
+      '.heat-opt.is-on .hd{color:var(--muted)}' +
+      '.heat-opt.h-D .hl{color:var(--muted)}' +
+      '.heat-opt.h-D.is-on{border-color:#8a8a90;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px #8a8a90}';
     document.head.appendChild(st);
   }
 
@@ -811,7 +821,14 @@
 
   /* ---------- 聊天室紀錄（liff.sendMessages） ---------- */
   var CHAT_CTX_OK = { utou: 1, group: 1, room: 1, square_chat: 1 };
-  var HEAT_LABEL = { A: 'A（熱）', B: 'B（溫）', C: 'C（冷）' };
+  var HEAT_LABEL = { A: 'A（熱）', B: 'B（溫）', C: 'C（冷）', D: 'D（無效）' };
+  // 回報表單選熱度時顯示的說明（試算表存的仍是 A/B/C/D）
+  var HEAT_INFO = {
+    A: { label: 'A（熱）', desc: '很想買，有談價、問貸款或約再來看，約 2 週內有機會成交' },
+    B: { label: 'B（溫）', desc: '有興趣，還在比較車款或價格，約 1 個月內考慮' },
+    C: { label: 'C（冷）', desc: '先看看，預算或購車時間不確定' },
+    D: { label: 'D（無效）', desc: '沒有購買意願，如陪朋友、路過、預算差太多、聯絡不到' }
+  };
 
   function clipText(s, n) {
     s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -1181,6 +1198,8 @@
     postDailyNoteToChat: postDailyNoteToChat,
     shareFlex: shareFlex,
     stockLiffUrl: stockLiffUrl,
+    HEAT_INFO: HEAT_INFO,
+    heatLabel: heatLabel,
     visitFlexMessage: visitFlexMessage,
     noteFlexMessage: noteFlexMessage
   };

@@ -51,6 +51,23 @@
     return box;
   }
 
+  /** 客戶熱度：2x2 選項卡，標題＋灰色小字說明 */
+  function heatPicker(values, current, onChange) {
+    var info = SD.HEAT_INFO || {};
+    var box = el('div', { class: 'heat-grid', role: 'radiogroup', 'aria-label': '客戶熱度' });
+    values.forEach(function (v) {
+      var meta = info[v] || { label: v, desc: '' };
+      var on = v === current;
+      var b = el('button', { class: 'heat-opt h-' + v + (on ? ' is-on' : ''), type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false' },
+        el('span', { class: 'hl', text: meta.label }),
+        meta.desc ? el('span', { class: 'hd', text: meta.desc }) : null
+      );
+      b.addEventListener('click', function () { onChange(v); });
+      box.appendChild(b);
+    });
+    return box;
+  }
+
   function emptyForm(today) {
     return {
       visitDate: today, customerName: '', customerPhone: '', customerSource: '',
@@ -111,7 +128,7 @@
 
       var FALLBACK_OPTIONS = {
         '客戶來源': ['FB廣告', 'IG廣告', 'LINE', '來電', '現場', '介紹', '其他'],
-        '客戶熱度': ['A', 'B', 'C'],
+        '客戶熱度': ['A', 'B', 'C', 'D'],
         '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
       };
       // 選項：先用上次存的（或預設），表單立刻出現；背景再向伺服器拿最新
@@ -293,7 +310,7 @@
           ),
           el('div', { class: 'field' },
             el('div', { class: 'label', text: '客戶熱度' }, el('span', { class: 'req', text: ' *' })),
-            seg(options['客戶熱度'] || ['A', 'B', 'C'], form.heat, function (v) { form.heat = v; render(); })
+            heatPicker(options['客戶熱度'] || ['A', 'B', 'C', 'D'], form.heat, function (v) { form.heat = v; render(); })
           ),
           el('div', { class: 'field' },
             el('div', { class: 'label', text: '結果' }, el('span', { class: 'req', text: ' *' })),
