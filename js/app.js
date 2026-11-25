@@ -1227,7 +1227,7 @@
   function kindSwitch(kind, onChange) {
     setKindTheme(kind);
     function b(k, label) {
-      return el('button', { class: 'tab' + (kind === k ? ' is-on' : ''), type: 'button', text: label, onclick: function () { if (kind !== k) onChange(k); } });
+      return el('button', { class: 'tab tab-' + k + (kind === k ? ' is-on' : ''), type: 'button', text: label, onclick: function () { if (kind !== k) onChange(k); } });
     }
     return el('div', { class: 'tabs kind-switch', role: 'tablist' }, b('sell', '賣車'), b('buy', '收車'));
   }

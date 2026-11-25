@@ -395,8 +395,8 @@
 
       function viewTabs() {
         return el('div', { class: 'tabs view-tabs' },
-          el('button', { class: 'tab' + (view === 'report' ? ' is-on' : ''), type: 'button', text: '回報看車', onclick: function () { if (view !== 'report') { view = 'report'; render(); window.scrollTo(0, 0); } } }),
-          el('button', { class: 'tab' + (view === 'buy' ? ' is-on' : ''), type: 'button', text: '回報收車', onclick: function () { if (view !== 'buy') { view = 'buy'; buy.load(); render(); window.scrollTo(0, 0); } } }),
+          el('button', { class: 'tab tab-sell' + (view === 'report' ? ' is-on' : ''), type: 'button', text: '回報看車', onclick: function () { if (view !== 'report') { view = 'report'; render(); window.scrollTo(0, 0); } } }),
+          el('button', { class: 'tab tab-buy' + (view === 'buy' ? ' is-on' : ''), type: 'button', text: '回報收車', onclick: function () { if (view !== 'buy') { view = 'buy'; buy.load(); render(); window.scrollTo(0, 0); } } }),
           el('button', { class: 'tab' + (view === 'stock' ? ' is-on' : ''), type: 'button', text: '🚗 查在庫車', onclick: function () { if (view !== 'stock') { view = 'stock'; stock.load(); render(); window.scrollTo(0, 0); } } })
         );
       }

@@ -1018,7 +1018,13 @@ img, svg { display: block; }
 .check-hint { margin: 8px 0 0; font-size: 12px; color: var(--dim); line-height: 1.5; }
 .badge-result-退訂 { color: var(--dim); border-style: dashed; }
 .kind-switch { margin: 12px 0 4px; }
-.kind-switch .tab { font-size: 15px; }
+.kind-switch .tab { font-size: 16px; min-height: 48px; font-weight: 700; }
+
+/* 賣車分頁永遠是上達紅，收車／買車分頁永遠是暖金，不跟頁面主題對調 */
+.tab.tab-sell { color: #e56b75; }
+.tab.tab-sell.is-on { background: #d7192a; color: #fff; }
+.tab.tab-buy { color: #E8C97A; }
+.tab.tab-buy.is-on { background: #D4A64A; color: #1A1408; }
 .staff-row.r7 { grid-template-columns: 1fr 34px 34px 34px 34px 48px 14px; }
 .updating { text-align: center; padding: 28px 18px; }
 .updating h2 { margin: 0 0 8px; font-size: 18px; }
