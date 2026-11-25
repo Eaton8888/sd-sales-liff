@@ -11,7 +11,7 @@
   function emptyBuy(today) {
     return {
       buyDate: today, sellerName: '', sellerPhone: '', customerSource: '', sourceText: '',
-      carModel: '', carYear: '', mileage: '', askPrice: '', offerPrice: '', heat: '',
+      carModel: '', carYear: '', mileage: '', spareKey: '', askPrice: '', offerPrice: '', heat: '',
       ordered: false, dealt: false, cancelled: false, followStatus: '', nextContactDate: '', note: ''
     };
   }
@@ -52,7 +52,7 @@
         ),
         edit
       ),
-      el('div', { class: 'visit-meta', text: [showStaff ? b.staffName : '', b.carModel, b.carYear, b.mileage !== '' && b.mileage != null ? b.mileage + ' 萬公里' : ''].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [showStaff ? b.staffName : '', b.carModel, b.carYear, b.mileage !== '' && b.mileage != null ? b.mileage + ' 萬公里' : '', SD.spareKeyText(b)].filter(Boolean).join(' ｜ ') }),
       prices ? el('div', { class: 'visit-meta', text: prices }) : null,
       b.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + b.nextContactDate }) : null,
       el('div', { class: 'visit-tags' },
@@ -113,6 +113,7 @@
         if (String(form.mileage).trim() === '' || isNaN(Number(form.mileage))) return '請填寫里程（萬公里），例如 4.5。';
         if (String(form.askPrice).trim() !== '' && isNaN(Number(form.askPrice))) return '客人開價請填數字（萬）。';
         if (String(form.offerPrice).trim() !== '' && isNaN(Number(form.offerPrice))) return '我們出價請填數字（萬）。';
+        if (form.spareKey !== '有' && form.spareKey !== '無') return '請選擇備鑰：有或無。';
         if (!form.heat) return '請選擇熱度。';
         if (form.followStatus === '再約' && !form.nextContactDate) return '追蹤狀態為「再約」時，請填寫下次聯絡日。';
         if (form.nextContactDate && form.nextContactDate < form.buyDate) return '下次聯絡日不可早於估車日期。';
@@ -141,6 +142,7 @@
           carModel: form.carModel.trim(),
           carYear: String(form.carYear).trim(),
           mileage: String(form.mileage).trim(),
+          spareKey: form.spareKey || '',
           askPrice: String(form.askPrice).trim(),
           offerPrice: String(form.offerPrice).trim(),
           heat: form.heat,
@@ -183,6 +185,7 @@
           customerSource: SD.mapLegacySource(b.customerSource), sourceText: src.sourceText,
           carModel: b.carModel || '', carYear: b.carYear || '',
           mileage: b.mileage === '' || b.mileage == null ? '' : String(b.mileage),
+          spareKey: b.spareKey || '',
           askPrice: b.askPrice === '' || b.askPrice == null ? '' : String(b.askPrice),
           offerPrice: b.offerPrice === '' || b.offerPrice == null ? '' : String(b.offerPrice),
           heat: b.heat || '', ordered: f.ordered, dealt: f.dealt, cancelled: f.cancelled, followStatus: f.followStatus,
@@ -238,6 +241,17 @@
             el('div', { class: 'field' },
               el('label', { class: 'label', for: 'b-km', text: '里程（萬公里）' }, req()),
               input('b-km', 'mileage', { inputmode: 'decimal', placeholder: '例如 4.5' })
+            )
+          ),
+          el('div', { class: 'field' },
+            el('div', { class: 'label', text: '備鑰' }, req()),
+            el('div', { class: 'seg', role: 'group', 'aria-label': '備鑰' },
+              ['有', '無'].map(function (v) {
+                return el('button', {
+                  class: 'seg-item' + (v === form.spareKey ? ' is-on' : ''), type: 'button', text: v,
+                  onclick: function () { form.spareKey = v; hooks.render(); }
+                });
+              })
             )
           ),
           el('div', { class: 'price-pair', style: { marginBottom: '6px' } },

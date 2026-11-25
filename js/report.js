@@ -25,7 +25,7 @@
         ),
         edit
       ),
-      el('div', { class: 'visit-meta', text: [v.carModel, v.carPlate, v.carPrice !== '' && v.carPrice != null ? v.carPrice + '萬' : '', v.budgetRange].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [v.carModel, v.carPlate, v.carPrice !== '' && v.carPrice != null ? v.carPrice + '萬' : '', SD.spareKeyText(v), v.budgetRange].filter(Boolean).join(' ｜ ') }),
       v.staffName && onEdit === false ? el('div', { class: 'visit-meta', text: v.staffName + '　' + v.staffId }) : null,
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       tags
@@ -86,7 +86,7 @@
   function emptyForm(today) {
     return {
       visitDate: today, customerName: '', customerPhone: '', customerSource: '', sourceText: '',
-      carModel: '', carPlate: '', carPrice: '', budgetRange: '', heat: '',
+      carModel: '', carPlate: '', carPrice: '', spareKey: '', budgetRange: '', heat: '',
       ordered: false, dealt: false, cancelled: false, followStatus: '',
       nextContactDate: '', note: ''
     };
@@ -133,13 +133,14 @@
       });
       var buy = SD.BuyReport.create(ctx, {
         render: function () { render(); },
-        options: function () { return { '客戶來源': opt('客戶來源'), '收車熱度': opt('收車熱度'), '追蹤狀態': opt('追蹤狀態') }; }
+        options: function () { return { '客戶來源': opt('客戶來源'), '收車熱度': opt('收車熱度'), '追蹤狀態': opt('追蹤狀態'), '備鑰': opt('備鑰') }; }
       });
       if (view === 'buy') buy.load();
       function pickCar(car) {
         form.carModel = stock.carModelText(car);
         form.carPlate = car.plate || '';
         form.carPrice = car.price == null ? '' : car.price;
+        if (typeof car.keys === 'boolean') form.spareKey = car.keys ? '有' : '無';
         manualCar = false;
       }
 
@@ -147,6 +148,7 @@
         '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '網路搜尋／AI', '其他'],
         '客戶熱度': ['A', 'B', 'C', 'D'],
         '追蹤狀態': ['再約', '考慮中', '未成交'],
+        '備鑰': ['有', '無'],
         '收車熱度': ['A', 'B', 'C']
       };
       function opt(key) { return (options && options[key] && options[key].length) ? options[key] : FALLBACK_OPTIONS[key]; }
@@ -207,6 +209,7 @@
         if (!form.customerSource) return '請選擇客戶來源。';
         if (form.customerSource === '其他' && !String(form.sourceText || '').trim()) return '客戶來源選「其他」時，請填寫來源。';
         if (!form.carModel.trim()) return '請選擇或填寫看車車款。';
+        if (form.spareKey !== '有' && form.spareKey !== '無') return '請選擇備鑰：有或無。';
         if (!form.heat) return '請選擇客戶熱度。';
         if (form.followStatus === '再約' && !form.nextContactDate) return '追蹤狀態為「再約」時，請填寫下次聯絡日。';
         if (form.nextContactDate && form.visitDate && form.nextContactDate < form.visitDate) return '下次聯絡日不可早於看車日期。';
@@ -235,6 +238,7 @@
           carModel: form.carModel.trim(),
           carPlate: form.carPlate || '',
           carPrice: form.carPrice === '' || form.carPrice == null ? '' : form.carPrice,
+          spareKey: form.spareKey || '',
           budgetRange: form.budgetRange.trim(),
           heat: form.heat,
           ordered: !!form.ordered,
@@ -298,6 +302,7 @@
           carModel: v.carModel || '',
           carPlate: v.carPlate || '',
           carPrice: v.carPrice === '' || v.carPrice == null ? '' : v.carPrice,
+          spareKey: v.spareKey || '',
           budgetRange: v.budgetRange || '',
           heat: v.heat || '',
           ordered: SD.flagsOf(v).ordered,
@@ -348,6 +353,10 @@
             }) : null
           ),
           renderCarField(),
+          el('div', { class: 'field' },
+            el('div', { class: 'label', text: '備鑰' }, el('span', { class: 'req', text: ' *' })),
+            seg(opt('備鑰').length ? opt('備鑰') : ['有', '無'], form.spareKey, function (v) { form.spareKey = v; render(); })
+          ),
           el('div', { class: 'field' },
             el('label', { class: 'label', for: 'budgetRange', text: '預算區間' }),
             el('input', { class: 'input', id: 'budgetRange', placeholder: '例如 150–200萬', value: form.budgetRange, oninput: function (e) { form.budgetRange = e.target.value; } })

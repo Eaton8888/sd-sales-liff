@@ -234,7 +234,8 @@
       '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '網路搜尋／AI', '其他'],
       '客戶熱度': ['A', 'B', 'C', 'D'],
       '追蹤狀態': ['再約', '考慮中', '未成交'],
-      '收車熱度': ['A', 'B', 'C']
+      '收車熱度': ['A', 'B', 'C'],
+      '備鑰': ['有', '無']
     };
     function V(id, staffId, name, date, created, customer, phone, source, car, stock, budget, heat, result, next, note) {
       return {
@@ -243,7 +244,8 @@
         stockId: stock, budgetRange: budget, heat: heat,
         ordered: result === '下訂' || result === '下訂成交', dealt: result === '成交' || result === '下訂成交', cancelled: result === '退訂',
         followStatus: /^(再約|考慮中|未成交)$/.test(result) ? result : '',
-        nextContactDate: next || '', note: note || '', updatedAt: created
+        nextContactDate: next || '', note: note || '', updatedAt: created,
+        spareKey: (result === '成交' || result === '下訂' || result === '下訂成交') ? '有' : '無'
       };
     }
     var visits = [
@@ -294,7 +296,8 @@
         sellerName: seller, sellerPhone: '', customerSource: src, carModel: car, carYear: year, mileage: km,
         askPrice: ask, offerPrice: offer, heat: heat,
         ordered: flags.indexOf('o') > -1, dealt: flags.indexOf('d') > -1, cancelled: flags.indexOf('x') > -1,
-        followStatus: follow || '', nextContactDate: next || '', note: '', updatedAt: created
+        followStatus: follow || '', nextContactDate: next || '', note: '', updatedAt: created,
+        spareKey: flags.indexOf('d') > -1 || flags.indexOf('o') > -1 ? '有' : '無'
       };
     }
     var tid = today.replace(/-/g, '');
@@ -470,7 +473,8 @@
         nextContactDate: payload.nextContactDate || '', note: payload.note || '',
         updatedAt: nowStr(),
         carPlate: String(payload.carPlate || '').toUpperCase(),
-        carPrice: payload.carPrice === '' || payload.carPrice == null ? '' : Number(payload.carPrice)
+        carPrice: payload.carPrice === '' || payload.carPrice == null ? '' : Number(payload.carPrice),
+        spareKey: payload.spareKey || ''
       };
       db.visits.unshift(rec);
       return rec;
@@ -480,7 +484,7 @@
       if (!found) throw apiError('找不到這筆看車紀錄。', 'NOT_FOUND');
       if (!isManagerRole(me.role) && found.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
       if (!isManagerRole(me.role) && found.visitDate !== todayStr()) throw apiError('已超過可修改時間，僅能修改當日紀錄，請洽主管協助。', 'FORBIDDEN');
-      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'budgetRange', 'heat', 'ordered', 'dealt', 'cancelled', 'followStatus', 'nextContactDate', 'note', 'carPlate', 'carPrice'].forEach(function (k) {
+      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'budgetRange', 'heat', 'ordered', 'dealt', 'cancelled', 'followStatus', 'nextContactDate', 'note', 'carPlate', 'carPrice', 'spareKey'].forEach(function (k) {
         if (Object.prototype.hasOwnProperty.call(payload, k) && payload[k] !== undefined) found[k] = payload[k];
       });
       found.updatedAt = nowStr();
@@ -602,7 +606,7 @@
         if (!bRec) throw apiError('找不到這筆收車紀錄。', 'NOT_FOUND');
         if (!isManagerRole(me.role) && bRec.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
       }
-      ['buyDate', 'sellerName', 'sellerPhone', 'customerSource', 'carModel', 'carYear', 'heat', 'followStatus', 'nextContactDate', 'note'].forEach(function (k) {
+      ['buyDate', 'sellerName', 'sellerPhone', 'customerSource', 'carModel', 'carYear', 'heat', 'followStatus', 'nextContactDate', 'note', 'spareKey'].forEach(function (k) {
         if (k in payload) bRec[k] = payload[k] == null ? '' : payload[k];
       });
       ['mileage', 'askPrice', 'offerPrice'].forEach(function (k) {
@@ -1185,6 +1189,13 @@
     if (a.length) return a.join('、') + (f.followStatus ? '（' + f.followStatus + '）' : '');
     return f.followStatus || '';
   }
+  /** 看車／收車紀錄上的備鑰（有／無）；空白就不顯示 */
+  function spareKeyText(v) {
+    var s = String((v && v.spareKey) || '').trim();
+    if (s === '有') return '備鑰 有';
+    if (s === '無') return '備鑰 無';
+    return '';
+  }
   /** 舊後端（還沒重新部署）只認得單一「結果」：送出時一起附上，讓舊後端也能存 */
   function legacyResult(f) {
     if (f.dealt) return '成交';
@@ -1338,6 +1349,7 @@
       ['客戶稱呼', rec.customerName],
       ['看車車款', rec.carModel],
       ['車牌', rec.carPlate],
+      ['備鑰', rec.spareKey],
       ['客戶來源', sourceDisplay(rec)],
       ['客戶熱度', rec.heat ? heatLabel(rec.heat) : ''],
       ['結果', flagList(rec).join('、')],
@@ -1358,6 +1370,7 @@
       flexRow('看車車款', rec.carModel),
       flexRow('車牌', rec.carPlate),
       flexRow('售價', rec.carPrice !== '' && rec.carPrice != null ? rec.carPrice + ' 萬' : ''),
+      flexRow('備鑰', rec.spareKey),
       flexRow('客戶來源', sourceDisplay(rec)),
       flexRow('客戶熱度', rec.heat ? heatLabel(rec.heat) : ''),
       flexRow('結果', flagList(rec).join('、')),
@@ -1705,6 +1718,7 @@
       ['車款', rec.carModel],
       ['年份', rec.carYear],
       ['里程', rec.mileage !== '' && rec.mileage != null ? rec.mileage + ' 萬公里' : ''],
+      ['備鑰', rec.spareKey],
       ['客人開價', rec.askPrice !== '' && rec.askPrice != null ? rec.askPrice + ' 萬' : ''],
       ['客戶來源', sourceDisplay(rec)],
       ['熱度', rec.heat ? heatLabel(rec.heat) : ''],
@@ -1793,6 +1807,7 @@
     isUpdatingError: isUpdatingError,
     updatingCard: updatingCard,
     kindSwitch: kindSwitch,
-    setKindTheme: setKindTheme
+    setKindTheme: setKindTheme,
+    spareKeyText: spareKeyText
   };
 })(window);

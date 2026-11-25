@@ -14,7 +14,7 @@
           el('div', { class: 'visit-name', text: v.customerName || '（未填稱呼）' })
         )
       ),
-      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, v.customerPhone].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, SD.spareKeyText(v), v.customerPhone].filter(Boolean).join(' ｜ ') }),
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       el('div', { class: 'visit-tags' },
         v.customerSource ? el('span', { class: 'badge', text: SD.sourceDisplay(v) }) : null,

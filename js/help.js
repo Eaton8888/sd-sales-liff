@@ -37,6 +37,8 @@
       ),
       el('div', { class: 'help-lab', text: '看車車款' }),
       el('div', { class: 'help-input', text: '範例：BMW 320i' }),
+      el('div', { class: 'help-lab', text: '備鑰' }),
+      el('div', { class: 'help-chips' }, chip('有', true), chip('無')),
       el('div', { class: 'help-lab', text: '結果（可複選）' }),
       el('div', { class: 'help-chips' },
         chip('☑ 下訂', true), chip('☑ 成交', true), chip('☐ 退訂')
@@ -68,6 +70,8 @@
     return el('div', { class: 'kind-buy' }, phone('回報收車', [
       el('div', { class: 'help-lab', text: '賣方客人／車款' }),
       el('div', { class: 'help-input', text: '範例客戶　範例車款 2019　4.5 萬公里' }),
+      el('div', { class: 'help-lab', text: '備鑰' }),
+      el('div', { class: 'help-chips' }, chip('有', true), chip('無')),
       el('div', { class: 'help-lab', text: '客人開價／我們出價（萬）' }),
       el('div', { class: 'help-input', text: '120　／　105（只有自己和主管看得到）' }),
       el('div', { class: 'help-lab', text: '熱度' }),
@@ -178,12 +182,12 @@
           '買車：回報收車、本月收車成績、今日總結。'
         ], mockMenu()),
         section(2, '📝', '回報看車（賣車）', '回報', [
-          '填好客戶來源、A 到 D 熱度和車款後送出。送出後，聊天室會留下一張紀錄卡。',
+          '填好客戶來源、A 到 D 熱度、車款和備鑰（有或無）後送出。送出後，聊天室會留下一張紀錄卡。',
           '每一筆回報都算一次帶看。客人有下訂、成交或退訂就勾起來，可以同時勾，勾了也不會扣掉帶看數。例如這個月帶看 10 台，其中 1 台下訂、1 台成交，成績會顯示帶看 10、下訂 1、成交 1。',
           '還沒成交的客人，在「追蹤狀態」選再約、考慮中或未成交。選再約要填下次聯絡日。當天的紀錄可以按「編輯」改勾選。'
         ], mockReport()),
         section(3, '🔑', '回報收車（買車）', ['在選單點「', '買車', '」分頁，再點「回報收車」。'], [
-          '填賣方客人、來源、車款、年份、里程、客人開價、我們出價和 A 到 C 熱度。每一筆都算一次估車，有下訂、成交或退訂再勾。',
+          '填賣方客人、來源、車款、年份、里程、備鑰（有或無）、客人開價、我們出價和 A 到 C 熱度。每一筆都算一次估車，有下訂、成交或退訂再勾。',
           '「我們出價」只有你自己和主管看得到，不會出現在聊天室紀錄卡上。'
         ], mockBuy(), 'kind-buy'),
         section(4, '📅', '今日總結／本月成績', '今日', [
