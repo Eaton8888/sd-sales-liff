@@ -81,7 +81,7 @@
     liffId: (window.SD_CONFIG || {}).liffIds.report,
     onReady: async function (ctx) {
       var me = ctx.me;
-      var isMgr = me.role === '主管';
+      var isMgr = SD.isManagerRole(me.role);
       var options = { '客戶來源': [], '客戶熱度': [], '結果': [] };
       var form = emptyForm(ctx.today());
       var editing = null;

@@ -144,7 +144,7 @@
         section(3, '🚗', '查在庫車', '庫存', [
           '可依廠牌、價格、車型或車牌找車，並把車卡直接分享給客戶。'
         ], mockStock()),
-        el('p', { class: 'help-foot', text: '有問題找主管。' })
+        el('p', { class: 'help-foot', text: '首次使用請先選填姓名，待主管啟用後即可使用。有問題找主管。' })
       )
     ]);
     window.scrollTo(0, 0);

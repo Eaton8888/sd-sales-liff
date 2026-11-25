@@ -62,7 +62,7 @@
     liffId: (window.SD_CONFIG || {}).liffIds.month,
     onReady: async function (ctx) {
       var me = ctx.me;
-      var isMgr = me.role === '主管';
+      var isMgr = SD.isManagerRole(me.role);
       var month = ctx.month();
       var maxMonth = ctx.month();
       var staffId = '';
@@ -134,7 +134,7 @@
           kids.push(el('div', { class: 'section-title', text: '各業務成績' }));
           var rows = data.staffTable.filter(function (row) {
             var n = (row.stats && row.stats.visitCount) || 0;
-            if (row.role === '主管' && n === 0) return false;
+            if (SD.isManagerRole(row.role) && n === 0) return false;
             return true;
           }).sort(function (a, b) {
             var av = (a.stats && a.stats.visitCount) || 0;

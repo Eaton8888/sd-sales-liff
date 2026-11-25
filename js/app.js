@@ -197,9 +197,20 @@
     return json.data;
   }
 
+  function isManagerRole(role) {
+    return role === '管理員' || role === '主管' || role === '老闆';
+  }
+  function canSeeFloor(role) {
+    return isManagerRole(role) || role === '超級業務';
+  }
+
   /* ---------- 模擬資料與 API ---------- */
   function mockRole() {
-    return params.get('role') === 'manager' ? '主管' : '業務';
+    var r = params.get('role');
+    if (r === 'manager' || r === 'admin') return '管理員';
+    if (r === 'boss') return '老闆';
+    if (r === 'super') return '超級業務';
+    return '業務';
   }
 
   function seedMock() {
@@ -207,15 +218,18 @@
     var month = monthStr();
     var prev = shiftMonth(month, -1);
     var staff = [
-      { staffId: 'SD000', name: '林主管', role: '主管', status: '啟用', boundAt: '2026-11-01 09:00:00' },
-      { staffId: 'SD001', name: '王小明', role: '業務', status: '啟用', boundAt: '2026-11-02 10:12:00' },
+      { staffId: 'SD000', name: '林主管', role: '管理員', status: '啟用', boundAt: '2026-11-01 09:00:00' },
+      { staffId: 'SD001', name: '王小明', role: '超級業務', status: '啟用', boundAt: '2026-11-02 10:12:00' },
       { staffId: 'SD002', name: '陳美玲', role: '業務', status: '啟用', boundAt: '2026-11-02 11:00:00' },
-      { staffId: 'SD003', name: '黃志偉', role: '業務', status: '啟用', boundAt: '2026-11-03 09:30:00' },
-      { staffId: 'SD004', name: '張大同', role: '業務', status: '啟用', boundAt: '2026-11-03 14:00:00' }
+      { staffId: 'SD003', name: '黃志偉', role: '超級業務', status: '啟用', boundAt: '2026-11-03 09:30:00' },
+      { staffId: 'SD004', name: '張大同', role: '業務', status: '啟用', boundAt: '2026-11-03 14:00:00' },
+      { staffId: 'SD005', name: '模擬業務A', role: '超級業務', status: '啟用', boundAt: '' },
+      { staffId: 'SD006', name: '模擬業務B', role: '超級業務', status: '啟用', boundAt: '' },
+      { staffId: 'SD007', name: '模擬老闆C', role: '老闆', status: '啟用', boundAt: '' }
     ];
     var options = {
-      '角色': ['業務', '主管'],
-      '狀態': ['啟用', '停用'],
+      '角色': ['業務', '超級業務', '老闆', '管理員'],
+      '狀態': ['啟用', '待審核', '停用'],
       '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '網路搜尋／AI', '其他'],
       '客戶熱度': ['A', 'B', 'C', 'D'],
       '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
@@ -281,8 +295,10 @@
   function currentMockStaff() {
     var role = mockRole();
     var list = store().staff;
-    if (role === '主管') return list[0];
-    return list[1];
+    if (role === '管理員') return list[0];
+    if (role === '老闆') return { staffId: 'SD099', name: '模擬老闆', role: '老闆', status: '啟用', boundAt: '2026-11-01 09:00:00' };
+    if (role === '超級業務') return list[1];
+    return list[2];
   }
 
   function visitInMonth(v, ym) { return v.visitDate && v.visitDate.slice(0, 7) === ym; }
@@ -338,33 +354,64 @@
     var me = Object.assign({}, me0, { status: '啟用' });
 
     if (action === 'me') {
+      if (params.get('pending') === '1' || me0._pending) throw apiError('已送出申請（' + (me0._pendingName || me.name) + '），等待主管啟用。', 'PENDING');
       if (params.get('unbound') === '1' && !me._bound) throw apiError('尚未綁定業務帳號，請先完成綁定。', 'UNBOUND');
       return me;
     }
+    if (action === 'listUnboundNames') {
+      if (params.get('oldapi') === '1') throw apiError('未知的操作。', 'UNKNOWN_ACTION');
+      if (params.get('pending') === '1' || me0._pending) throw apiError('已送出申請（' + (me0._pendingName || me.name) + '），等待主管啟用。', 'PENDING');
+      if (params.get('unbound') === '1' && !me._bound) {
+        return {
+          bound: false,
+          names: db.staff.filter(function (s) { return !s.boundAt && s.role !== '管理員' && s.role !== '主管'; }).map(function (s) {
+            return { staffId: s.staffId, name: s.name };
+          })
+        };
+      }
+      return { bound: true, staff: me, names: [] };
+    }
     if (action === 'bind') {
-      if (!payload.staffId || !payload.bindCode) throw apiError('請輸入業務編號和綁定驗證碼。', 'VALIDATION');
-      if (payload.bindCode !== '1234' && payload.bindCode !== me.staffId) {
-        throw apiError('業務編號或綁定驗證碼不正確。', 'VALIDATION');
+      if (!payload.staffId) throw apiError('請選擇你的姓名。', 'VALIDATION');
+      if (payload.bindCode !== undefined) {
+        if (!payload.bindCode) throw apiError('請輸入業務編號和綁定驗證碼。', 'VALIDATION');
+        if (payload.bindCode !== '1234' && payload.bindCode !== me.staffId) {
+          throw apiError('業務編號或綁定驗證碼不正確。', 'VALIDATION');
+        }
+        var hitOld = db.staff.filter(function (s) { return s.staffId === payload.staffId; })[0];
+        if (!hitOld) throw apiError('業務編號或綁定驗證碼不正確。', 'VALIDATION');
+        me0._bound = true;
+        hitOld.boundAt = nowStr();
+        return Object.assign({}, hitOld, { status: '啟用' });
       }
       var hit = db.staff.filter(function (s) { return s.staffId === payload.staffId; })[0];
-      if (!hit) throw apiError('業務編號或綁定驗證碼不正確。', 'VALIDATION');
+      if (!hit) throw apiError('找不到對應的業務資料，請重新整理後再試。', 'VALIDATION');
       me0._bound = true;
+      me0._pending = true;
+      me0._pendingName = hit.name;
       hit.boundAt = nowStr();
-      return Object.assign({}, hit, { status: '啟用' });
+      hit.status = '待審核';
+      return Object.assign({}, hit);
     }
     if (action === 'options') return db.options;
     if (action === 'inventory') {
-      // 模擬伺服器：只回在庫車；底價等內部欄位只給主管
+      // 模擬伺服器：只回在庫車；底價給管理員／老闆／超級業務；其餘內部欄位只給管理員／老闆
       var inv = typeof global.SD_MOCK_INVENTORY === 'function' ? global.SD_MOCK_INVENTORY() : [];
       var PUB = ['id', 'status', 'brand', 'model', 'cc', 'color', 'interior', 'year', 'mileage', 'price', 'priceText', 'plate', 'factoryCert', 'cert', 'original'];
-      var mgr = me.role === '主管';
+      var mgr = isManagerRole(me.role);
+      var seeFloor = canSeeFloor(me.role);
       return {
         manager: mgr,
+        canSeeFloor: seeFloor,
         updatedAt: nowStr(),
         cars: inv.filter(function (c) { return c.status === '在庫'; }).map(function (c) {
           if (mgr) return Object.assign({}, c);
           var o = {};
           PUB.forEach(function (k) { if (k in c) o[k] = c[k]; });
+          if (seeFloor) {
+            if ('floor' in c) o.floor = c.floor;
+            if ('floorText' in c) o.floorText = c.floorText;
+          }
           return o;
         })
       };
@@ -377,7 +424,7 @@
     }
 
     function canSee(v, filterId, forManagerAll) {
-      if (me.role === '主管') {
+      if (isManagerRole(me.role)) {
         if (filterId) return v.staffId === filterId;
         return true;
       }
@@ -405,8 +452,8 @@
     if (action === 'updateVisit') {
       var found = db.visits.filter(function (v) { return v.visitId === payload.visitId; })[0];
       if (!found) throw apiError('找不到這筆看車紀錄。', 'NOT_FOUND');
-      if (me.role !== '主管' && found.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
-      if (me.role !== '主管' && found.visitDate !== todayStr()) throw apiError('已超過可修改時間，僅能修改當日紀錄，請洽主管協助。', 'FORBIDDEN');
+      if (!isManagerRole(me.role) && found.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
+      if (!isManagerRole(me.role) && found.visitDate !== todayStr()) throw apiError('已超過可修改時間，僅能修改當日紀錄，請洽主管協助。', 'FORBIDDEN');
       ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'stockId', 'budgetRange', 'heat', 'result', 'nextContactDate', 'note', 'carPlate', 'carPrice'].forEach(function (k) {
         if (Object.prototype.hasOwnProperty.call(payload, k) && payload[k] !== undefined) found[k] = payload[k];
       });
@@ -419,11 +466,11 @@
       var visits = db.visits.filter(function (v) { return v.visitDate === date && canSee(v, filterId); });
       visits.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
       var data = { date: date, visits: visits };
-      if (me.role === '主管') {
+      if (isManagerRole(me.role)) {
         var reported = {};
         db.visits.forEach(function (v) { if (v.visitDate === date) reported[v.staffId] = true; });
         data.unreported = db.staff.filter(function (s) {
-          return s.status === '啟用' && s.role === '業務' && !reported[s.staffId] && (!filterId || s.staffId === filterId);
+          return s.status === '啟用' && (s.role === '業務' || s.role === '超級業務') && !reported[s.staffId] && (!filterId || s.staffId === filterId);
         }).map(function (s) { return { staffId: s.staffId, name: s.name }; });
       }
       return data;
@@ -450,12 +497,12 @@
         sourceCounts: countBy(todays, 'customerSource', db.options['客戶來源']),
         followUps: followUps
       };
-      if (me.role === '主管' && !fid) {
+      if (isManagerRole(me.role) && !fid) {
         out.dailyNotes = db.notes.filter(function (n) { return n.date === d2; });
         var reported2 = {};
         db.visits.forEach(function (v) { if (v.visitDate === d2) reported2[v.staffId] = true; });
         out.unreported = db.staff.filter(function (s) {
-          return s.status === '啟用' && s.role === '業務' && !reported2[s.staffId];
+          return s.status === '啟用' && (s.role === '業務' || s.role === '超級業務') && !reported2[s.staffId];
         }).map(function (s) { return { staffId: s.staffId, name: s.name }; });
       } else {
         var sid = fid || me.staffId;
@@ -468,7 +515,7 @@
       var month = payload.month || monthStr();
       var prev = shiftMonth(month, -1);
       var fid2 = payload.staffId || '';
-      var isMgr = me.role === '主管';
+      var isMgr = isManagerRole(me.role);
       function goalOf(ym, sid) {
         return db.goals.filter(function (g) { return g.month === ym && g.staffId === sid; })[0] || null;
       }
@@ -625,7 +672,17 @@
     return {};
   }
 
-  function bindForm(onBound) {
+  function pendingScreen(msg) {
+    return el('div', { class: 'screen' },
+      brandBlock(),
+      svg(ICO.alert, 'screen-ico ico'),
+      el('h1', { text: '等待主管啟用' }),
+      el('p', { text: msg || '申請已送出，等待主管在名單將狀態改為「啟用」後即可開始使用。' }),
+      el('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: function () { location.reload(); }, text: '重新檢查狀態' })
+    );
+  }
+
+  function legacyBindForm(onBound) {
     var errBox = el('div', { class: 'banner is-hidden' });
     var staffIn = el('input', { class: 'input', id: 'bind-id', autocomplete: 'off', placeholder: '例如 SD001' });
     var codeIn = el('input', { class: 'input', id: 'bind-code', autocomplete: 'off', placeholder: '請輸入主管提供的驗證碼' });
@@ -667,6 +724,107 @@
     );
   }
 
+  function nameBindForm(names, onBound, onRefreshNames) {
+    var errBox = el('div', { class: 'banner is-hidden' });
+    var sel = el('select', { class: 'select', id: 'bind-name' },
+      el('option', { value: '', text: '請選擇你的姓名' })
+    );
+    names.forEach(function (n) {
+      sel.appendChild(el('option', { value: n.staffId, text: n.name }));
+    });
+    var btn = el('button', { class: 'btn btn-primary btn-block', type: 'submit', text: '送出申請' });
+    var form = el('form', {},
+      el('div', { class: 'field' },
+        el('label', { class: 'label', for: 'bind-name', text: '姓名' }, el('span', { class: 'req', text: ' *' })),
+        sel
+      ),
+      errBox,
+      btn
+    );
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var sid = sel.value;
+      if (!sid) {
+        errBox.textContent = '請選擇你的姓名。';
+        errBox.classList.remove('is-hidden');
+        return;
+      }
+      errBox.classList.add('is-hidden');
+      btn.disabled = true;
+      btn.textContent = '送出中…';
+      try {
+        var data = await api('bind', { staffId: sid });
+        onBound(data);
+      } catch (err) {
+        if (err.code === 'PENDING') {
+          setApp(pendingScreen(err.message));
+          return;
+        }
+        errBox.textContent = err.message || '送出失敗';
+        errBox.classList.remove('is-hidden');
+        btn.disabled = false;
+        btn.textContent = '送出申請';
+        if (err.code === 'CONFLICT' && onRefreshNames) {
+          onRefreshNames(err.message);
+        }
+      }
+    });
+    return el('div', {},
+      topbar(null),
+      pageHead('身分綁定', 'LINK ACCOUNT', ICO.clip),
+      el('div', { class: 'wrap' },
+        el('p', { class: 'hint', style: { marginBottom: '16px' }, text: '第一次使用，請選擇你的姓名送出申請，待主管啟用後即可開始使用。' }),
+        form
+      )
+    );
+  }
+
+  async function loadBindScreen(opts, bannerMsg) {
+    setApp(bootScreen('讀取名單中…'));
+    function acceptBound(data) {
+      if (data && data.status === '待審核') {
+        setApp(pendingScreen('已送出申請（' + (data.name || '') + '），等待主管啟用。'));
+        return;
+      }
+      if (data && data.status && data.status !== '啟用') {
+        setApp(errorScreen('帳號已停用', '此帳號已停用，請聯絡主管。'));
+        return;
+      }
+      meCache = data;
+      saveMe(data);
+      opts.onReady(ctxFor(data));
+    }
+    try {
+      var res = await api('listUnboundNames');
+      if (res && res.bound && res.staff) {
+        acceptBound(res.staff);
+        return;
+      }
+      var names = (res && res.names) || [];
+      if (!names.length) {
+        setApp(errorScreen('目前沒有可選填的名單', '所有名單都已綁定完成，若找不到你的姓名請聯絡主管。'));
+        return;
+      }
+      var screen = nameBindForm(names, acceptBound, function (msg) {
+        loadBindScreen(opts, msg);
+      });
+      if (bannerMsg) {
+        var b = screen.querySelector('.banner');
+        if (b) { b.textContent = bannerMsg; b.classList.remove('is-hidden'); }
+      }
+      setApp(screen);
+    } catch (err) {
+      if (err.code === 'PENDING') { setApp(pendingScreen(err.message)); return; }
+      if (err.code === 'DISABLED') { setApp(errorScreen('帳號已停用', err.message)); return; }
+      if (err.code === 'UNKNOWN_ACTION') {
+        // 後端尚未更新為選填名單時，退回舊版驗證碼綁定畫面
+        setApp(legacyBindForm(acceptBound));
+        return;
+      }
+      setApp(errorScreen('無法載入名單', err.message || '請稍後再試。'));
+    }
+  }
+
   var ME_LAST = 'sd_me_last';
   function ctxFor(me) {
     return {
@@ -677,13 +835,10 @@
   function handleMeError(err, opts) {
     try { localStorage.removeItem(ME_LAST); } catch (e) {}
     if (err.code === 'UNBOUND') {
-      setApp(bindForm(function (data) {
-        meCache = data;
-        saveMe(data);
-        opts.onReady(ctxFor(data));
-      }));
+      loadBindScreen(opts);
       return true;
     }
+    if (err.code === 'PENDING') { setApp(pendingScreen(err.message)); return true; }
     if (err.code === 'DISABLED') { setApp(errorScreen('帳號已停用', err.message)); return true; }
     if (err.code === 'INVALID_TOKEN') { setApp(errorScreen('請重新登入', err.message)); return true; }
     return false;
@@ -1373,6 +1528,8 @@
 
   global.SD = {
     start: start,
+    isManagerRole: isManagerRole,
+    canSeeFloor: canSeeFloor,
     el: el,
     svg: svg,
     ICO: ICO,

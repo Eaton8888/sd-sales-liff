@@ -43,7 +43,7 @@
     liffId: (window.SD_CONFIG || {}).liffIds.today,
     onReady: async function (ctx) {
       var me = ctx.me;
-      var isMgr = me.role === '主管';
+      var isMgr = SD.isManagerRole(me.role);
       var scope = isMgr ? 'store' : 'self';
       var filterId = '';
       var summary = null;
