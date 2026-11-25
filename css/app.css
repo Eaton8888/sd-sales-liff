@@ -288,6 +288,18 @@ img, svg { display: block; }
   color: #fff;
   font-weight: 700;
 }
+.chips-source {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.chips-source .chip {
+  width: 100%;
+  padding: 0 6px;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-align: center;
+}
 
 .seg {
   display: flex;
