@@ -460,6 +460,7 @@
       }
 
       function renderInner() {
+        SD.setKindTheme(view === 'buy' ? 'buy' : 'sell');
         if (view === 'buy') {
           SD.setApp([
             SD.topbar(me),

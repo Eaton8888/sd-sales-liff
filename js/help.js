@@ -65,7 +65,7 @@
   }
 
   function mockBuy() {
-    return phone('回報收車', [
+    return el('div', { class: 'kind-buy' }, phone('回報收車', [
       el('div', { class: 'help-lab', text: '賣方客人／車款' }),
       el('div', { class: 'help-input', text: '範例客戶　範例車款 2019　4.5 萬公里' }),
       el('div', { class: 'help-lab', text: '客人開價／我們出價（萬）' }),
@@ -75,7 +75,7 @@
       el('div', { class: 'help-lab', text: '結果（可複選）' }),
       el('div', { class: 'help-chips' }, chip('☑ 下訂', true), chip('☐ 成交'), chip('☐ 退訂')),
       el('div', { class: 'help-cta', text: '送出收車回報' })
-    ]);
+    ]));
   }
 
   function mockMenu() {
@@ -83,8 +83,10 @@
       el('div', { class: 'help-chips' }, chip('賣車', true), chip('買車')),
       el('div', { class: 'help-lab', text: '賣車分頁' }),
       el('div', { class: 'help-chips' }, chip('回報看車'), chip('本月賣車成績'), chip('今日總結')),
-      el('div', { class: 'help-lab', text: '買車分頁' }),
-      el('div', { class: 'help-chips' }, chip('回報收車'), chip('本月收車成績'), chip('今日總結'))
+      el('div', { class: 'kind-buy' },
+        el('div', { class: 'help-lab', text: '買車分頁' }),
+        el('div', { class: 'help-chips' }, chip('買車', true), chip('回報收車'), chip('本月收車成績'), chip('今日總結'))
+      )
     ]);
   }
 
@@ -141,8 +143,8 @@
     ]);
   }
 
-  function section(n, emoji, title, keyword, lines, mock) {
-    return el('section', { class: 'help-sec' },
+  function section(n, emoji, title, keyword, lines, mock, extraClass) {
+    return el('section', { class: 'help-sec' + (extraClass ? ' ' + extraClass : '') },
       el('div', { class: 'help-sec-head' },
         el('span', { class: 'help-num', text: String(n) }),
         el('h2', {}, el('span', { class: 'help-emoji', text: emoji + ' ' }), title)
@@ -183,7 +185,7 @@
         section(3, '🔑', '回報收車（買車）', ['在選單點「', '買車', '」分頁，再點「回報收車」。'], [
           '填賣方客人、來源、車款、年份、里程、客人開價、我們出價和 A 到 C 熱度。每一筆都算一次估車，有下訂、成交或退訂再勾。',
           '「我們出價」只有你自己和主管看得到，不會出現在聊天室紀錄卡上。'
-        ], mockBuy()),
+        ], mockBuy(), 'kind-buy'),
         section(4, '📅', '今日總結／本月成績', '今日', [
           '頁面上方可切換「賣車」和「收車」。可以看今天的帶看或估車、待跟進名單，也可以寫今日心得（在賣車分頁）。',
           '本月成績會顯示帶看（估車）、下訂、成交、退訂和目標進度。業務只看得到自己的，主管看得到全店。'

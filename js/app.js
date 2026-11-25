@@ -961,7 +961,7 @@
       'background-size:400% 100%;animation:sdsk 1.2s ease infinite}.sk-tall{height:110px}' +
       '@keyframes sdsk{0%{background-position:100% 50%}100%{background-position:0 50%}}' +
       '.sk-note{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.65;margin:0 0 10px}' +
-      '.sk-dot{width:6px;height:6px;border-radius:50%;background:#d7192a;animation:sdpulse 1s ease infinite}' +
+      '.sk-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:sdpulse 1s ease infinite}' +
       '@keyframes sdpulse{50%{opacity:.25}}' +
       '.badge-heat-D{color:var(--dim);border-style:dashed;opacity:.85}' +
       '.heat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}' +
@@ -969,7 +969,7 @@
       'border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.03);color:#fff;font:inherit;cursor:pointer}' +
       '.heat-opt .hl{font-weight:700;font-size:15px}' +
       '.heat-opt .hd{font-size:12px;line-height:1.45;color:var(--dim)}' +
-      '.heat-opt.is-on{border-color:var(--accent);background:rgba(215,25,42,.16);box-shadow:inset 0 0 0 1px var(--accent)}' +
+      '.heat-opt.is-on{border-color:var(--accent);background:rgba(var(--accent-rgb),.16);box-shadow:inset 0 0 0 1px var(--accent)}' +
       '.heat-opt.is-on .hd{color:var(--muted)}' +
       '.heat-opt.h-D .hl{color:var(--muted)}' +
       '.heat-opt.h-D.is-on{border-color:#8a8a90;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px #8a8a90}';
@@ -1206,6 +1206,13 @@
   function initialKind() {
     return (qp('mode') === 'buy' || qp('view') === 'buy') ? 'buy' : 'sell';
   }
+  /** 收車畫面改用金色點綴；賣車維持紅色。加在 html 與 body 上。 */
+  function setKindTheme(kind) {
+    var on = kind === 'buy';
+    document.documentElement.classList.toggle('kind-buy', on);
+    if (document.body) document.body.classList.toggle('kind-buy', on);
+  }
+  setKindTheme(initialKind());
   /** 後端還沒重新部署、不認得收車功能 */
   function isUpdatingError(err) {
     return !!err && (err.code === 'UNKNOWN_ACTION' || /未知的操作|不能合併/.test(String(err.message || '')));
@@ -1218,6 +1225,7 @@
     );
   }
   function kindSwitch(kind, onChange) {
+    setKindTheme(kind);
     function b(k, label) {
       return el('button', { class: 'tab' + (kind === k ? ' is-on' : ''), type: 'button', text: label, onclick: function () { if (kind !== k) onChange(k); } });
     }
@@ -1250,13 +1258,13 @@
     return HEAT_LABEL[s] || s;
   }
 
-  function flexAccentBar() {
+  function flexAccentBar(color) {
     return {
       type: 'box',
       layout: 'vertical',
       contents: [{ type: 'filler' }],
       height: '3px',
-      backgroundColor: '#D40000',
+      backgroundColor: color || '#D40000',
       margin: 'md'
     };
   }
@@ -1275,7 +1283,7 @@
     };
   }
 
-  function flexHeader(title) {
+  function flexHeader(title, accent) {
     return {
       type: 'box',
       layout: 'vertical',
@@ -1285,12 +1293,12 @@
       contents: [
         { type: 'text', text: '上達汽車', size: 'xxs', color: '#AAAAAA', weight: 'bold' },
         { type: 'text', text: title, size: 'lg', weight: 'bold', color: '#FFFFFF', margin: 'sm', wrap: true },
-        flexAccentBar()
+        flexAccentBar(accent)
       ]
     };
   }
 
-  function flexBubble(title, bodyContents) {
+  function flexBubble(title, bodyContents, accent) {
     return {
       type: 'bubble',
       size: 'kilo',
@@ -1298,7 +1306,7 @@
         header: { backgroundColor: '#0A0A0A' },
         body: { backgroundColor: '#0A0A0A' }
       },
-      header: flexHeader(title),
+      header: flexHeader(title, accent),
       body: {
         type: 'box',
         layout: 'vertical',
@@ -1723,7 +1731,7 @@
     return {
       type: 'flex',
       altText: clipText((isUpdate ? '已更新收車' : '已回報收車') + (bits.length ? '：' + bits.join(' ') : ''), 400),
-      contents: flexBubble(buyTitle(isUpdate), rows)
+      contents: flexBubble(buyTitle(isUpdate), rows, '#D4A64A')
     };
   }
   async function postBuyToChat(rec, isUpdate) {
@@ -1784,6 +1792,7 @@
     initialKind: initialKind,
     isUpdatingError: isUpdatingError,
     updatingCard: updatingCard,
-    kindSwitch: kindSwitch
+    kindSwitch: kindSwitch,
+    setKindTheme: setKindTheme
   };
 })(window);
