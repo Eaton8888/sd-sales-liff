@@ -725,10 +725,39 @@
     document.head.appendChild(st);
   }
 
+  function wantsView(name) {
+    if (params.get('view') === name) return true;
+    var stt = params.get('liff.state') || '';
+    if (!stt) return false;
+    try { stt = decodeURIComponent(stt); } catch (e) {}
+    return new RegExp('(^|[?&])view=' + name + '(&|$)').test(stt);
+  }
+
   async function start(opts) {
     PAGE = opts.page;
     injectSkeletonCss();
     cachePrune();
+    // 使用說明：不需綁定或登入，避免被帶去綁定頁。在 LINE 內只安靜初始化，不呼叫 login()。
+    if (wantsView('help')) {
+      if (typeof SD.renderHelp === 'function') {
+        try { SD.renderHelp(); } catch (e) {
+          console.error(e);
+          setApp(errorScreen('無法開啟使用說明', e.message || '請重新整理頁面。'));
+        }
+      } else {
+        setApp(errorScreen('無法開啟使用說明', '請重新整理頁面。'));
+      }
+      try {
+        if (!MOCK) {
+          await waitForSdk(8000);
+          if (global.liff) {
+            await global.liff.init({ liffId: opts.liffId });
+            liffReadyResolve();
+          }
+        }
+      } catch (err) { console.error(err); }
+      return;
+    }
     // 1) 這支手機開過：直接用上次的業務資料畫出頁面，LINE 登入和 API 在背景進行
     var last = null;
     try { last = JSON.parse(localStorage.getItem(ME_LAST) || 'null'); } catch (e) {}

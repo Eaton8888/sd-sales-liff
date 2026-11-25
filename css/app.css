@@ -728,3 +728,235 @@ img, svg { display: block; }
 
 .brand-logo { display: block; height: 34px; width: auto; flex: 0 0 auto; }
 .brand-text { border-left: 1px solid rgba(255,255,255,0.35); padding-left: 10px; }
+
+/* ===== 使用說明 (?view=help) ===== */
+.help-head { padding-top: 8px; }
+.help-head .page-title { margin: 0; }
+.help-wrap { padding-bottom: 48px; }
+.help-sec {
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 18px 16px 16px;
+  margin: 0 0 16px;
+}
+.help-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.help-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.help-sec h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+.help-emoji { font-weight: 400; }
+.help-kw, .help-txt {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.help-kw b {
+  color: #fff;
+  font-weight: 800;
+  background: rgba(215, 25, 42, 0.22);
+  border: 1px solid rgba(215, 25, 42, 0.55);
+  border-radius: 6px;
+  padding: 1px 8px;
+  margin: 0 2px;
+}
+.help-foot {
+  text-align: center;
+  color: var(--dim);
+  font-size: 14px;
+  margin: 22px 0 8px;
+  letter-spacing: 0.08em;
+}
+
+.help-phone {
+  margin: 14px auto 2px;
+  max-width: 280px;
+  background: #0d0d0f;
+  border: 2px solid #3a3a40;
+  border-radius: 26px;
+  padding: 0 0 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  user-select: none;
+}
+.help-phone-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c8c8cc;
+}
+.help-phone-notch {
+  width: 72px;
+  height: 10px;
+  background: #000;
+  border-radius: 0 0 8px 8px;
+}
+.help-phone-inds { letter-spacing: 2px; font-size: 8px; }
+.help-phone-title {
+  font-size: 14px;
+  font-weight: 800;
+  padding: 4px 14px 8px;
+  letter-spacing: 0.04em;
+}
+.help-phone-body { padding: 0 12px 4px; font-size: 11px; color: var(--text); }
+.help-lab {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  margin: 8px 0 4px;
+  letter-spacing: 0.06em;
+}
+.help-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.help-chip {
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+.help-chip.is-on {
+  background: rgba(215, 25, 42, 0.2);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.help-heat { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.help-heat-opt {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.help-heat-opt b { font-size: 11px; }
+.help-heat-opt span { font-size: 9px; color: var(--dim); line-height: 1.35; }
+.help-heat-opt.is-on {
+  border-color: var(--accent);
+  background: rgba(215, 25, 42, 0.16);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.help-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+}
+.help-cta {
+  margin-top: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.help-cta-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: #fff;
+  font-weight: 700;
+}
+.help-chat { margin-top: 10px; }
+.help-chat-label { font-size: 10px; color: var(--dim); margin: 0 0 6px; }
+.help-flex {
+  background: #141416;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 0 10px 8px;
+}
+.help-flex-bar { height: 3px; background: var(--accent); margin: 0 -10px 8px; }
+.help-flex-kicker { font-size: 10px; color: var(--accent-soft); font-weight: 700; }
+.help-flex-name { font-size: 13px; font-weight: 800; margin-top: 2px; }
+.help-flex-meta { font-size: 11px; color: var(--muted); margin: 2px 0 6px; }
+.help-flex-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.help-flex-tags span {
+  font-size: 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--muted);
+}
+.help-flex-tags span.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.help-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 2px; }
+.help-stat {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 6px 4px 7px;
+  text-align: center;
+}
+.help-stat-lab { font-size: 9px; color: var(--dim); }
+.help-stat-n { font-size: 18px; font-weight: 800; line-height: 1.2; }
+.help-visit {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.help-visit-name { font-size: 13px; font-weight: 800; }
+.help-visit-meta { font-size: 10px; color: var(--muted); margin: 2px 0 6px; }
+.help-note {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 11px;
+}
+.help-car {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  margin: 8px 0 0;
+  background: rgba(255, 255, 255, 0.03);
+}
+.help-car-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.help-car-title { font-size: 13px; font-weight: 800; }
+.help-car-price { font-size: 15px; font-weight: 800; white-space: nowrap; }
+.help-car-price small { font-size: 10px; font-weight: 600; color: var(--muted); }
+.help-car-specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 8px 0 0; }
+.help-car-spec {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 4px 5px;
+}
+.help-car-spec b { display: block; font-size: 11px; }
+.help-car-spec span { font-size: 9px; color: var(--dim); }
