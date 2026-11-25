@@ -216,7 +216,7 @@
     var options = {
       '角色': ['業務', '主管'],
       '狀態': ['啟用', '停用'],
-      '客戶來源': ['FB', 'IG', 'TikTok', 'Threads', 'LINE', '現場', '親友介紹', '其他'],
+      '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '其他'],
       '客戶熱度': ['A', 'B', 'C', 'D'],
       '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
     };
@@ -248,7 +248,7 @@
           'V' + ds.replace(/-/g, '') + '-' + String(startN + i).padStart(4, '0'),
           staffId, name, ds, ds + ' 14:00:00',
           '客戶' + (startN + i), '09' + String(10000000 + startN + i),
-          options['客戶來源'][i % 8], ['Porsche Macan', 'BMW 530i', 'Mercedes-Benz GLB', 'Tesla Model 3'][i % 4],
+          options['客戶來源'][i % options['客戶來源'].length], ['Porsche Macan', 'BMW 530i', 'Mercedes-Benz GLB', 'Tesla Model 3'][i % 4],
           '', '150–200萬', ['A', 'B', 'C'][i % 3], res, res === '再約' ? ds : '', ''
         ));
       }
@@ -291,7 +291,9 @@
     var out = {};
     (known || []).forEach(function (k) { out[k] = 0; });
     list.forEach(function (it) {
-      var k = it[key] || '（未填）';
+      var raw = it[key] || '（未填）';
+      var k = key === 'customerSource' ? mapLegacySource(raw) : raw;
+      if (!k) k = '（未填）';
       out[k] = (out[k] || 0) + 1;
     });
     return out;
@@ -825,7 +827,16 @@
    * 選「其他」時，填的來源文字存在「備註」第一行：【來源】文字
    * （客戶來源欄仍存「其他」，伺服器驗證不用改、不必重新部署） */
   var SOURCE_TAG = '【來源】';
-  var SOURCE_LEGACY = { 'FB廣告': 'FB', 'IG廣告': 'IG', '介紹': '親友介紹', '來電': '其他' };
+  var SOURCE_LEGACY = {
+    'TikTok': '抖音',
+    'IG': 'IG Reels', 'IG廣告': 'IG Reels',
+    'FB': 'FB粉專', 'FB廣告': 'FB粉專',
+    'LINE': '官方LINE',
+    '現場': '過路客',
+    'Threads': '其他',
+    '介紹': '親友介紹',
+    '來電': '其他'
+  };
   function splitSourceNote(note) {
     var s = String(note == null ? '' : note);
     if (s.indexOf(SOURCE_TAG) !== 0) return { sourceText: '', note: s };
@@ -839,12 +850,14 @@
     if (!t) return n;
     return SOURCE_TAG + t + (n ? '\n' + n : '');
   }
-  /** 顯示用：其他（文字）；舊資料照原值顯示 */
+  /** 顯示用：舊來源對到新名稱；其他（文字） */
   function sourceDisplay(rec) {
     rec = rec || {};
-    var src = String(rec.customerSource || '').trim();
+    var raw = String(rec.customerSource || '').trim();
+    var src = mapLegacySource(raw);
     if (src === '其他') {
       var t = splitSourceNote(rec.note).sourceText;
+      if (!t && raw && raw !== '其他') t = raw;
       return t ? '其他（' + t + '）' : '其他';
     }
     return src;

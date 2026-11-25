@@ -31,8 +31,8 @@
     );
   }
 
-  function chips(name, values, current, onChange) {
-    var box = el('div', { class: 'chips', role: 'group' });
+  function chips(name, values, current, onChange, boxClass) {
+    var box = el('div', { class: boxClass || 'chips', role: 'group' });
     values.forEach(function (v) {
       var b = el('button', { class: 'chip' + (v === current ? ' is-on' : ''), type: 'button', text: v });
       b.addEventListener('click', function () { onChange(v === current ? '' : v); });
@@ -127,7 +127,7 @@
       }
 
       var FALLBACK_OPTIONS = {
-        '客戶來源': ['FB', 'IG', 'TikTok', 'Threads', 'LINE', '現場', '親友介紹', '其他'],
+        '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '其他'],
         '客戶熱度': ['A', 'B', 'C', 'D'],
         '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
       };
@@ -273,7 +273,7 @@
           customerName: v.customerName || '',
           customerPhone: v.customerPhone || '',
           customerSource: SD.mapLegacySource(v.customerSource),
-          sourceText: SD.splitSourceNote(v.note).sourceText || (String(v.customerSource || '').trim() === '來電' ? '來電' : ''),
+          sourceText: SD.splitSourceNote(v.note).sourceText || (function () { var raw = String(v.customerSource || '').trim(); return (SD.mapLegacySource(raw) === '其他' && raw && raw !== '其他') ? raw : ''; })(),
           carModel: v.carModel || '',
           carPlate: v.carPlate || '',
           carPrice: v.carPrice === '' || v.carPrice == null ? '' : v.carPrice,
@@ -317,7 +317,7 @@
               form.customerSource = v;
               render();
               if (v === '其他' && !String(form.sourceText || '').trim()) { var n = document.getElementById('sourceText'); if (n) n.focus({ preventScroll: true }); }
-            }),
+            }, 'chips chips-source'),
             form.customerSource === '其他' ? el('input', {
               class: 'input', id: 'sourceText', maxlength: '30', style: { marginTop: '10px' },
               placeholder: '請填寫來源', 'aria-label': '請填寫來源', value: form.sourceText || '',
