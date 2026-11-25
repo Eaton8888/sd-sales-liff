@@ -14,12 +14,13 @@
           el('div', { class: 'visit-name', text: v.customerName || '（未填稱呼）' })
         )
       ),
-      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, v.stockId, v.customerPhone].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [showStaff ? v.staffName : '', v.carModel, v.carPlate, v.customerPhone].filter(Boolean).join(' ｜ ') }),
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       el('div', { class: 'visit-tags' },
         v.customerSource ? el('span', { class: 'badge', text: SD.sourceDisplay(v) }) : null,
         v.heat ? badge('heat', v.heat) : null,
-        v.result ? badge('result', v.result) : null
+        SD.flagList(v).map(function (r) { return badge('result', r); }),
+        SD.flagsOf(v).followStatus ? badge('result', SD.flagsOf(v).followStatus) : null
       )
     );
   }
@@ -38,12 +39,38 @@
     }));
   }
 
+  /** 舊後端（v2）只有 resultCounts：換算成 下訂／成交／退訂 與 追蹤狀態 */
+  function countsOf(summary) {
+    var rc = summary.resultCounts || {};
+    var follow = summary.followCounts;
+    if (!follow) {
+      follow = {};
+      SD.FOLLOW_STATES.forEach(function (k) { if (rc[k]) follow[k] = rc[k]; });
+    }
+    return {
+      order: summary.orderCount != null ? summary.orderCount : (rc['下訂'] || 0),
+      deal: summary.dealCount != null ? summary.dealCount : (rc['成交'] || 0),
+      cancel: summary.cancelCount != null ? summary.cancelCount : (rc['退訂'] || 0),
+      follow: follow
+    };
+  }
+
+  function stat(label, n) {
+    return el('div', { class: 'stat' },
+      el('div', { class: 'stat-label', text: label }),
+      el('div', { class: 'stat-num', text: String(n || 0) })
+    );
+  }
+
   SD.start({
     page: 'today',
     liffId: (window.SD_CONFIG || {}).liffIds.today,
     onReady: async function (ctx) {
       var me = ctx.me;
       var isMgr = SD.isManagerRole(me.role);
+      var kind = SD.initialKind();
+      var buyData = null;
+      var buyUpdating = false;
       var scope = isMgr ? 'store' : 'self';
       var filterId = '';
       var summary = null;
@@ -55,7 +82,7 @@
       var loading = false;
       var noteDirty = false;
       var seq = 0;
-      function cacheName() { return 'today_' + ctx.today() + '_' + scope + '_' + (filterId || ''); }
+      function cacheName() { return (kind === 'buy' ? 'buytoday_' : 'today_') + ctx.today() + '_' + scope + '_' + (filterId || ''); }
 
       function apply(results) {
         summary = results[0];
@@ -77,6 +104,7 @@
         var payload = { date: ctx.today() };
         if (isMgr && scope === 'self') payload.staffId = filterId || me.staffId;
         if (isMgr && scope === 'store' && filterId) payload.staffId = filterId;
+        if (kind === 'buy') return ctx.api('buyToday', payload);
         var listPayload = { date: ctx.today() };
         if (payload.staffId) listPayload.staffId = payload.staffId;
         // 兩個請求同時送，減少等待時間
@@ -118,8 +146,45 @@
         }
       }
 
+      function switchKind(k) {
+        kind = k;
+        refresh();
+        window.scrollTo(0, 0);
+      }
+
+      function renderBuy(headExtra, showStaff) {
+        var kids = headExtra.slice();
+        if (buyUpdating) {
+          kids.push(SD.updatingCard());
+        } else if (!buyData) {
+          kids.push(SD.loadingNote('讀取中…'), SD.skeleton(5));
+        } else {
+          var c = countsOf(buyData);
+          if (loading) kids.push(SD.loadingNote('更新中…'));
+          kids.push(el('div', { class: 'stats-4' },
+            stat('估車', buyData.appraisalCount), stat('下訂', c.order), stat('成交', c.deal), stat('退訂', c.cancel)));
+          kids.push(el('p', { class: 'check-hint', text: '每一筆收車回報都算一次估車；下訂、成交、退訂另外計算。' }));
+          kids.push(el('div', { class: 'section-title', text: '追蹤狀態' }));
+          kids.push(el('div', { class: 'card' }, bars(c.follow)));
+          kids.push(el('div', { class: 'section-title', text: '客戶來源' }));
+          kids.push(el('div', { class: 'card' }, bars(SD.mergeSourceCounts(buyData.sourceCounts))));
+          var fu = buyData.followUps || [];
+          kids.push(el('div', { class: 'section-title' }, el('span', { text: '今日待跟進' }), el('span', { class: 'count', text: fu.length + ' 筆' })));
+          kids.push(fu.length ? fu.map(function (b) { return SD.buyCard(b, null, showStaff); }) : el('div', { class: 'empty', text: '今天沒有到期的下次聯絡。' }));
+          var recs = buyData.records || [];
+          kids.push(el('div', { class: 'section-title' }, el('span', { text: '今日收車列表' }), el('span', { class: 'count', text: recs.length + ' 筆' })));
+          kids.push(recs.length ? recs.map(function (b) { return SD.buyCard(b, null, showStaff); }) : el('div', { class: 'empty', text: '今天還沒有收車紀錄。' }));
+          kids.push(el('p', { class: 'hint', style: { marginTop: '16px' }, text: '今日心得在「賣車」分頁填寫。' }));
+        }
+        SD.setApp([
+          SD.topbar(me),
+          SD.pageHead('今日總結', 'Today｜收車', SD.ICO.cal),
+          el('div', { class: 'wrap' }, kids)
+        ]);
+      }
+
       function render() {
-        var headExtra = [];
+        var headExtra = [SD.kindSwitch(kind, switchKind)];
         if (isMgr) {
           headExtra.push(el('div', { class: 'tabs' },
             el('button', { class: 'tab' + (scope === 'store' ? ' is-on' : ''), type: 'button', text: '全店', onclick: function () { scope = 'store'; filterId = ''; refresh(); } }),
@@ -139,6 +204,8 @@
         var showStaff = isMgr && !(scope === 'self' && (filterId === me.staffId || !filterId));
         if (isMgr && scope === 'store' && !filterId) showStaff = true;
 
+        if (kind === 'buy') { renderBuy(headExtra, showStaff); return; }
+
         if (!summary) {
           SD.setApp([
             SD.topbar(me),
@@ -148,23 +215,14 @@
           return;
         }
 
+        var cnt = countsOf(summary);
         var kids = headExtra.concat(loading ? [SD.loadingNote('更新中…')] : []).concat([
-          el('div', { class: 'stats-3' },
-            el('div', { class: 'stat' },
-              el('div', { class: 'stat-label', text: '帶看' }),
-              el('div', { class: 'stat-num', text: String(summary.visitCount || 0) })
-            ),
-            el('div', { class: 'stat' },
-              el('div', { class: 'stat-label', text: '再約' }),
-              el('div', { class: 'stat-num', text: String((summary.resultCounts || {})['再約'] || 0) })
-            ),
-            el('div', { class: 'stat' },
-              el('div', { class: 'stat-label', text: '成交' }),
-              el('div', { class: 'stat-num', text: String((summary.resultCounts || {})['成交'] || 0) })
-            )
+          el('div', { class: 'stats-4' },
+            stat('帶看', summary.visitCount), stat('下訂', cnt.order), stat('成交', cnt.deal), stat('退訂', cnt.cancel)
           ),
-          el('div', { class: 'section-title', text: '結果分布' }),
-          el('div', { class: 'card' }, bars(summary.resultCounts)),
+          el('p', { class: 'check-hint', text: '每一筆看車回報都算一次帶看；下訂、成交、退訂另外計算。' }),
+          el('div', { class: 'section-title', text: '追蹤狀態' }),
+          el('div', { class: 'card' }, bars(cnt.follow)),
           el('div', { class: 'section-title', text: '客戶來源' }),
           el('div', { class: 'card' }, bars(SD.mergeSourceCounts(summary.sourceCounts))),
           el('div', { class: 'section-title' },
@@ -240,19 +298,28 @@
         var name = cacheName();
         var cached = ctx.cacheGet(name);
         summary = null;
-        if (cached) apply(cached);
+        buyData = null;
+        buyUpdating = false;
+        var forKind = kind;
+        if (cached) { if (forKind === 'buy') buyData = cached; else apply(cached); }
         loading = true;
         renderKeepFocus();
         try {
           var results = await fetchData();
           ctx.cacheSet(name, results);
           if (my !== seq) return;
-          apply(results);
+          if (forKind === 'buy') buyData = results; else apply(results);
           loading = false;
           renderKeepFocus();
         } catch (err) {
           if (my !== seq) return;
           loading = false;
+          if (forKind === 'buy') {
+            if (SD.isUpdatingError(err)) { buyUpdating = true; renderKeepFocus(); return; }
+            if (buyData) { renderKeepFocus(); ctx.toast('更新失敗：' + (err.message || '請稍後再試')); }
+            else SD.setApp([SD.topbar(me), SD.errorScreen('無法載入今日收車', err.message, refresh)]);
+            return;
+          }
           if (summary) { renderKeepFocus(); ctx.toast('更新失敗：' + (err.message || '請稍後再試')); }
           else SD.setApp([SD.topbar(me), SD.errorScreen('無法載入今日總結', err.message, refresh)]);
         }

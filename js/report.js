@@ -10,7 +10,8 @@
     var tags = el('div', { class: 'visit-tags' },
       v.customerSource ? el('span', { class: 'badge', text: SD.sourceDisplay(v) }) : null,
       v.heat ? badge('heat', v.heat) : null,
-      v.result ? badge('result', v.result) : null
+      SD.flagList(v).map(function (r) { return badge('result', r); }),
+      SD.flagsOf(v).followStatus ? badge('result', SD.flagsOf(v).followStatus) : null
     );
     var edit = onEdit ? el('button', {
       class: 'edit-btn', type: 'button', text: '編輯',
@@ -24,7 +25,7 @@
         ),
         edit
       ),
-      el('div', { class: 'visit-meta', text: [v.carModel, v.carPlate, v.carPrice !== '' && v.carPrice != null ? v.carPrice + '萬' : '', v.stockId, v.budgetRange].filter(Boolean).join(' ｜ ') }),
+      el('div', { class: 'visit-meta', text: [v.carModel, v.carPlate, v.carPrice !== '' && v.carPrice != null ? v.carPrice + '萬' : '', v.budgetRange].filter(Boolean).join(' ｜ ') }),
       v.staffName && onEdit === false ? el('div', { class: 'visit-meta', text: v.staffName + '　' + v.staffId }) : null,
       v.nextContactDate ? el('div', { class: 'visit-meta', text: '下次聯絡：' + v.nextContactDate }) : null,
       tags
@@ -51,6 +52,20 @@
     return box;
   }
 
+  /** 下訂／成交／退訂：可同時勾，勾了也不會扣掉帶看數 */
+  function flagChecks(form, onToggle) {
+    var items = [['ordered', '下訂', ''], ['dealt', '成交', ''], ['cancelled', '退訂', ' c-cancel']];
+    return el('div', { class: 'checks', role: 'group', 'aria-label': '結果（可複選）' }, items.map(function (it) {
+      var on = !!form[it[0]];
+      return el('button', {
+        class: 'check' + it[2] + (on ? ' is-on' : ''), type: 'button', role: 'checkbox', 'aria-checked': on ? 'true' : 'false',
+        onclick: function () { onToggle(it[0], !on); }
+      }, el('span', { class: 'box', text: on ? '✓' : '' }), it[1]);
+    }));
+  }
+  SD.flagChecks = flagChecks;
+  SD.chips = chips;
+
   /** 客戶熱度：2x2 選項卡，標題＋灰色小字說明 */
   function heatPicker(values, current, onChange) {
     var info = SD.HEAT_INFO || {};
@@ -71,7 +86,8 @@
   function emptyForm(today) {
     return {
       visitDate: today, customerName: '', customerPhone: '', customerSource: '', sourceText: '',
-      carModel: '', carPlate: '', carPrice: '', stockId: '', budgetRange: '', heat: '', result: '',
+      carModel: '', carPlate: '', carPrice: '', budgetRange: '', heat: '',
+      ordered: false, dealt: false, cancelled: false, followStatus: '',
       nextContactDate: '', note: ''
     };
   }
@@ -94,13 +110,9 @@
       var successId = new URLSearchParams(location.search).get('success') || '';
       // 從「查在庫車」連結開啟：liff.line.me/{id}?view=stock
       // LIFF 第一次載入時參數包在 liff.state 裡（例如 ?liff.state=%3Fview%3Dstock），兩種都要認得
-      function wantStock() {
-        var qs = new URLSearchParams(location.search);
-        if (qs.get('view') === 'stock') return true;
-        var stt = qs.get('liff.state') || '';
-        return /(^|[?&])view=stock(&|$)/.test(stt);
-      }
-      var view = wantStock() ? 'stock' : 'report';
+      // 圖文選單「買車」分頁的「回報收車」：?view=buy
+      var qView = SD.qp('view');
+      var view = qView === 'stock' ? 'stock' : (qView === 'buy' || SD.qp('mode') === 'buy') ? 'buy' : 'report';
       var manualCar = false;
       var renderQueued = false;
       function queueRender() {
@@ -119,6 +131,11 @@
           if (f) f.scrollIntoView({ block: 'start' });
         }
       });
+      var buy = SD.BuyReport.create(ctx, {
+        render: function () { render(); },
+        options: function () { return { '客戶來源': opt('客戶來源'), '收車熱度': opt('收車熱度'), '追蹤狀態': opt('追蹤狀態') }; }
+      });
+      if (view === 'buy') buy.load();
       function pickCar(car) {
         form.carModel = stock.carModelText(car);
         form.carPlate = car.plate || '';
@@ -129,8 +146,10 @@
       var FALLBACK_OPTIONS = {
         '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '網路搜尋／AI', '其他'],
         '客戶熱度': ['A', 'B', 'C', 'D'],
-        '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
+        '追蹤狀態': ['再約', '考慮中', '未成交'],
+        '收車熱度': ['A', 'B', 'C']
       };
+      function opt(key) { return (options && options[key] && options[key].length) ? options[key] : FALLBACK_OPTIONS[key]; }
       // 選項：先用上次存的（或預設），表單立刻出現；背景再向伺服器拿最新
       options = ctx.cacheGet('options') || FALLBACK_OPTIONS;
       var listsLoading = true;
@@ -189,8 +208,7 @@
         if (form.customerSource === '其他' && !String(form.sourceText || '').trim()) return '客戶來源選「其他」時，請填寫來源。';
         if (!form.carModel.trim()) return '請選擇或填寫看車車款。';
         if (!form.heat) return '請選擇客戶熱度。';
-        if (!form.result) return '請選擇結果。';
-        if (form.result === '再約' && !form.nextContactDate) return '結果為「再約」時，請填寫下次聯絡日。';
+        if (form.followStatus === '再約' && !form.nextContactDate) return '追蹤狀態為「再約」時，請填寫下次聯絡日。';
         if (form.nextContactDate && form.visitDate && form.nextContactDate < form.visitDate) return '下次聯絡日不可早於看車日期。';
         return '';
       }
@@ -217,10 +235,13 @@
           carModel: form.carModel.trim(),
           carPlate: form.carPlate || '',
           carPrice: form.carPrice === '' || form.carPrice == null ? '' : form.carPrice,
-          stockId: form.stockId.trim(),
           budgetRange: form.budgetRange.trim(),
           heat: form.heat,
-          result: form.result,
+          ordered: !!form.ordered,
+          dealt: !!form.dealt,
+          cancelled: !!form.cancelled,
+          followStatus: form.followStatus || '',
+          result: SD.legacyResult(form), // 舊後端相容（新後端有新欄位時不看這個）
           nextContactDate: form.nextContactDate,
           note: SD.joinSourceNote(form.customerSource === '其他' ? form.sourceText : '', form.note)
         };
@@ -277,10 +298,12 @@
           carModel: v.carModel || '',
           carPlate: v.carPlate || '',
           carPrice: v.carPrice === '' || v.carPrice == null ? '' : v.carPrice,
-          stockId: v.stockId || '',
           budgetRange: v.budgetRange || '',
           heat: v.heat || '',
-          result: v.result || '',
+          ordered: SD.flagsOf(v).ordered,
+          dealt: SD.flagsOf(v).dealt,
+          cancelled: SD.flagsOf(v).cancelled,
+          followStatus: SD.flagsOf(v).followStatus,
           nextContactDate: v.nextContactDate || '',
           note: SD.splitSourceNote(v.note).note
         };
@@ -293,8 +316,8 @@
       }
 
       function renderForm() {
-        var nextWrap = el('div', { class: 'field' + (form.result === '再約' ? '' : ' is-hidden'), id: 'next-wrap' },
-          el('label', { class: 'label', for: 'nextContactDate', text: '下次聯絡日' }, el('span', { class: 'req', text: ' *' })),
+        var nextWrap = el('div', { class: 'field', id: 'next-wrap' },
+          el('label', { class: 'label', for: 'nextContactDate', text: '下次聯絡日' }, form.followStatus === '再約' ? el('span', { class: 'req', text: ' *' }) : el('span', { class: 'hint', style: { marginLeft: '8px', fontWeight: '400' }, text: '選填' })),
           el('input', { class: 'input', type: 'date', id: 'nextContactDate', value: form.nextContactDate, oninput: function (e) { form.nextContactDate = e.target.value; } })
         );
         return el('form', { id: 'visit-form', class: 'card' },
@@ -326,24 +349,21 @@
           ),
           renderCarField(),
           el('div', { class: 'field' },
-            el('label', { class: 'label', for: 'stockId', text: '庫存編號' }),
-            el('input', { class: 'input', id: 'stockId', placeholder: '選填', value: form.stockId, oninput: function (e) { form.stockId = e.target.value; } })
-          ),
-          el('div', { class: 'field' },
             el('label', { class: 'label', for: 'budgetRange', text: '預算區間' }),
             el('input', { class: 'input', id: 'budgetRange', placeholder: '例如 150–200萬', value: form.budgetRange, oninput: function (e) { form.budgetRange = e.target.value; } })
           ),
           el('div', { class: 'field' },
             el('div', { class: 'label', text: '客戶熱度' }, el('span', { class: 'req', text: ' *' })),
-            heatPicker(options['客戶熱度'] || ['A', 'B', 'C', 'D'], form.heat, function (v) { form.heat = v; render(); })
+            heatPicker(opt('客戶熱度'), form.heat, function (v) { form.heat = v; render(); })
           ),
           el('div', { class: 'field' },
-            el('div', { class: 'label', text: '結果' }, el('span', { class: 'req', text: ' *' })),
-            chips('result', options['結果'] || [], form.result, function (v) {
-              form.result = v;
-              if (v !== '再約') form.nextContactDate = form.nextContactDate;
-              render();
-            })
+            el('div', { class: 'label', text: '結果' }, el('span', { class: 'hint', style: { marginLeft: '8px', fontWeight: '400' }, text: '可複選，沒有就不用勾' })),
+            flagChecks(form, function (k, on) { form[k] = on; render(); }),
+            el('p', { class: 'check-hint', text: '每一筆都算一次帶看，勾了下訂、成交或退訂也不會扣掉帶看數。' })
+          ),
+          el('div', { class: 'field' },
+            el('div', { class: 'label', text: '追蹤狀態' }, el('span', { class: 'hint', style: { marginLeft: '8px', fontWeight: '400' }, text: '還沒成交的客人選這裡' })),
+            chips('follow', opt('追蹤狀態'), form.followStatus, function (v) { form.followStatus = v; render(); })
           ),
           nextWrap,
           el('div', { class: 'field' },
@@ -376,6 +396,7 @@
       function viewTabs() {
         return el('div', { class: 'tabs view-tabs' },
           el('button', { class: 'tab' + (view === 'report' ? ' is-on' : ''), type: 'button', text: '回報看車', onclick: function () { if (view !== 'report') { view = 'report'; render(); window.scrollTo(0, 0); } } }),
+          el('button', { class: 'tab' + (view === 'buy' ? ' is-on' : ''), type: 'button', text: '回報收車', onclick: function () { if (view !== 'buy') { view = 'buy'; buy.load(); render(); window.scrollTo(0, 0); } } }),
           el('button', { class: 'tab' + (view === 'stock' ? ' is-on' : ''), type: 'button', text: '🚗 查在庫車', onclick: function () { if (view !== 'stock') { view = 'stock'; stock.load(); render(); window.scrollTo(0, 0); } } })
         );
       }
@@ -439,6 +460,15 @@
       }
 
       function renderInner() {
+        if (view === 'buy') {
+          SD.setApp([
+            SD.topbar(me),
+            SD.pageHead('回報收車', 'Report a buy-in', SD.ICO.key),
+            el('div', { class: 'wrap' }, [viewTabs()].concat(buy.nodes()))
+          ].concat(buy.overlay()));
+          buy.afterRender();
+          return;
+        }
         if (view === 'stock') {
           SD.setApp([
             SD.topbar(me),

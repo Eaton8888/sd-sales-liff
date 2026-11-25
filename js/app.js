@@ -85,7 +85,8 @@
     alert: '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="24" cy="24" r="16"/><path d="M24 16v12M24 32.5v.5"/></svg>',
     check: '<svg viewBox="0 0 56 56" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="28" cy="28" r="20"/><path d="M18 29l7 7 14-16"/></svg>',
     chevL: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 5l-7 7 7 7"/></svg>',
-    chevR: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 5l7 7-7 7"/></svg>'
+    chevR: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 5l7 7-7 7"/></svg>',
+    key: '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="24" r="7"/><path d="M24 24h16M34 24v6M40 24v5"/></svg>'
   };
 
   /* ---------- Toast / header ---------- */
@@ -232,13 +233,16 @@
       '狀態': ['啟用', '待審核', '停用'],
       '客戶來源': ['抖音', 'IG Reels', 'FB粉專', '8891', '官方LINE', '過路客', '老客回流', '親友介紹', '網路搜尋／AI', '其他'],
       '客戶熱度': ['A', 'B', 'C', 'D'],
-      '結果': ['成交', '下訂', '再約', '考慮中', '未成交']
+      '追蹤狀態': ['再約', '考慮中', '未成交'],
+      '收車熱度': ['A', 'B', 'C']
     };
     function V(id, staffId, name, date, created, customer, phone, source, car, stock, budget, heat, result, next, note) {
       return {
         visitId: id, createdAt: created, visitDate: date, staffId: staffId, staffName: name,
         customerName: customer, customerPhone: phone, customerSource: source, carModel: car,
-        stockId: stock, budgetRange: budget, heat: heat, result: result,
+        stockId: stock, budgetRange: budget, heat: heat,
+        ordered: result === '下訂' || result === '下訂成交', dealt: result === '成交' || result === '下訂成交', cancelled: result === '退訂',
+        followStatus: /^(再約|考慮中|未成交)$/.test(result) ? result : '',
         nextContactDate: next || '', note: note || '', updatedAt: created
       };
     }
@@ -267,7 +271,7 @@
         ));
       }
     }
-    fillMonth(month, 20, 'SD001', '王小明', ['成交', '再約', '考慮中', '下訂', '未成交', '再約']);
+    fillMonth(month, 20, 'SD001', '王小明', ['下訂成交', '再約', '考慮中', '下訂', '退訂', '再約']);
     fillMonth(month, 30, 'SD002', '陳美玲', ['下訂', '成交', '再約', '考慮中', '成交', '再約']);
     fillMonth(month, 40, 'SD003', '黃志偉', ['考慮中', '未成交', '再約', '考慮中', '下訂', '未成交']);
     fillMonth(prev, 10, 'SD001', '王小明', ['再約', '考慮中', '成交', '未成交', '下訂', '再約']);
@@ -284,7 +288,23 @@
       { month: month, staffId: 'SD003', staffName: '黃志偉', visitGoal: 16, orderGoal: 3, dealGoal: 1 },
       { month: prev, staffId: 'SD001', staffName: '王小明', visitGoal: 18, orderGoal: 3, dealGoal: 2 }
     ];
-    return { staff: staff, options: options, visits: visits, notes: notes, goals: goals, seq: 4 };
+    function B(id, staffId, name, date, created, seller, src, car, year, km, ask, offer, heat, flags, follow, next) {
+      return {
+        kind: 'buy', buyId: id, createdAt: created, buyDate: date, staffId: staffId, staffName: name,
+        sellerName: seller, sellerPhone: '', customerSource: src, carModel: car, carYear: year, mileage: km,
+        askPrice: ask, offerPrice: offer, heat: heat,
+        ordered: flags.indexOf('o') > -1, dealt: flags.indexOf('d') > -1, cancelled: flags.indexOf('x') > -1,
+        followStatus: follow || '', nextContactDate: next || '', note: '', updatedAt: created
+      };
+    }
+    var tid = today.replace(/-/g, '');
+    var buys = [
+      B('P' + tid + '-0001', 'SD001', '王小明', today, today + ' 11:20:00', '範例賣方甲', '8891', 'Lexus NX200', '2019', 4.5, 120, 105, 'A', 'o', '', ''),
+      B('P' + tid + '-0002', 'SD002', '陳美玲', today, today + ' 14:05:00', '範例賣方乙', '官方LINE', 'Toyota RAV4', '2020', 3.2, 85, 78, 'B', '', '考慮中', today),
+      B('P' + tid + '-0003', 'SD002', '陳美玲', today, today + ' 15:40:00', '範例賣方丙', '過路客', 'BMW 320i', '2018', 6.1, 95, 88, 'A', 'od', '', '')
+    ];
+    goals.forEach(function (g) { g.buyVisitGoal = 8; g.buyOrderGoal = 3; g.buyDealGoal = 2; });
+    return { staff: staff, options: options, visits: visits, buys: buys, notes: notes, goals: goals, seq: 4 };
   }
 
   var mockStore = null;
@@ -315,15 +335,20 @@
     return out;
   }
   function summarize(visits, options) {
-    var visitCount = visits.length, orderCount = 0, dealCount = 0;
+    var visitCount = visits.length, orderCount = 0, dealCount = 0, cancelCount = 0, follow = {};
+    (options['追蹤狀態'] || []).forEach(function (k) { follow[k] = 0; });
     visits.forEach(function (v) {
-      if (v.result === '下訂') orderCount++;
-      if (v.result === '成交') dealCount++;
+      var f = flagsOf(v);
+      if (f.ordered) orderCount++;
+      if (f.dealt) dealCount++;
+      if (f.cancelled) cancelCount++;
+      if (f.followStatus) follow[f.followStatus] = (follow[f.followStatus] || 0) + 1;
     });
     return {
-      visitCount: visitCount, orderCount: orderCount, dealCount: dealCount,
+      visitCount: visitCount, orderCount: orderCount, dealCount: dealCount, cancelCount: cancelCount,
       orderRate: ratio(orderCount, visitCount), dealRate: ratio(dealCount, visitCount),
-      resultCounts: countBy(visits, 'result', options['結果']),
+      resultCounts: { '下訂': orderCount, '成交': dealCount, '退訂': cancelCount },
+      followCounts: follow,
       sourceCounts: countBy(visits, 'customerSource', options['客戶來源'])
     };
   }
@@ -346,7 +371,7 @@
     if (params.get('disabled') === '1') {
       throw apiError('此帳號已停用，請聯絡主管。', 'DISABLED');
     }
-    if (params.get('oldapi') === '1' && (action === 'batch' || action === 'inventory')) {
+    if (params.get('oldapi') === '1' && (action === 'batch' || action === 'inventory' || /Buy$|^buy/.test(action))) {
       throw apiError('未知的操作。', 'UNKNOWN_ACTION'); // 模擬尚未重新部署的舊後端
     }
     var db = store();
@@ -356,7 +381,7 @@
     if (action === 'me') {
       if (params.get('pending') === '1' || me0._pending) throw apiError('已送出申請（' + (me0._pendingName || me.name) + '），等待主管啟用。', 'PENDING');
       if (params.get('unbound') === '1' && !me._bound) throw apiError('尚未綁定業務帳號，請先完成綁定。', 'UNBOUND');
-      return me;
+      return params.get('oldapi') === '1' ? me : Object.assign({ apiVersion: 3 }, me);
     }
     if (action === 'listUnboundNames') {
       if (params.get('oldapi') === '1') throw apiError('未知的操作。', 'UNKNOWN_ACTION');
@@ -440,7 +465,8 @@
         customerName: payload.customerName, customerPhone: payload.customerPhone || '',
         customerSource: payload.customerSource, carModel: payload.carModel,
         stockId: payload.stockId || '', budgetRange: payload.budgetRange || '',
-        heat: payload.heat, result: payload.result,
+        heat: payload.heat,
+        ordered: !!payload.ordered, dealt: !!payload.dealt, cancelled: !!payload.cancelled, followStatus: payload.followStatus || '',
         nextContactDate: payload.nextContactDate || '', note: payload.note || '',
         updatedAt: nowStr(),
         carPlate: String(payload.carPlate || '').toUpperCase(),
@@ -454,7 +480,7 @@
       if (!found) throw apiError('找不到這筆看車紀錄。', 'NOT_FOUND');
       if (!isManagerRole(me.role) && found.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
       if (!isManagerRole(me.role) && found.visitDate !== todayStr()) throw apiError('已超過可修改時間，僅能修改當日紀錄，請洽主管協助。', 'FORBIDDEN');
-      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'stockId', 'budgetRange', 'heat', 'result', 'nextContactDate', 'note', 'carPlate', 'carPrice'].forEach(function (k) {
+      ['visitDate', 'customerName', 'customerPhone', 'customerSource', 'carModel', 'budgetRange', 'heat', 'ordered', 'dealt', 'cancelled', 'followStatus', 'nextContactDate', 'note', 'carPlate', 'carPrice'].forEach(function (k) {
         if (Object.prototype.hasOwnProperty.call(payload, k) && payload[k] !== undefined) found[k] = payload[k];
       });
       found.updatedAt = nowStr();
@@ -491,10 +517,11 @@
       var fid = payload.staffId || '';
       var todays = db.visits.filter(function (v) { return v.visitDate === d2 && canSee(v, fid); });
       var followUps = db.visits.filter(function (v) { return v.nextContactDate === d2 && canSee(v, fid); });
+      var sm0 = summarize(todays, db.options);
       var out = {
-        date: d2, visitCount: todays.length,
-        resultCounts: countBy(todays, 'result', db.options['結果']),
-        sourceCounts: countBy(todays, 'customerSource', db.options['客戶來源']),
+        date: d2, visitCount: todays.length, orderCount: sm0.orderCount, dealCount: sm0.dealCount, cancelCount: sm0.cancelCount,
+        resultCounts: sm0.resultCounts, followCounts: sm0.followCounts,
+        sourceCounts: sm0.sourceCounts,
         followUps: followUps
       };
       if (isManagerRole(me.role) && !fid) {
@@ -532,14 +559,14 @@
         var pv = db.visits.filter(function (v) { return visitInMonth(v, prev); });
         var st = summarize(mv, db.options);
         var pst = summarize(pv, db.options);
-        st.vsPrevious = { visitCount: st.visitCount - pst.visitCount, orderCount: st.orderCount - pst.orderCount, dealCount: st.dealCount - pst.dealCount };
+        st.vsPrevious = { visitCount: st.visitCount - pst.visitCount, orderCount: st.orderCount - pst.orderCount, dealCount: st.dealCount - pst.dealCount, cancelCount: st.cancelCount - pst.cancelCount };
         st.goal = goalView(sumGoals(month), st);
         var staffTable = db.staff.filter(function (s) { return s.status === '啟用'; }).map(function (s) {
           var sm = db.visits.filter(function (v) { return v.staffId === s.staffId && visitInMonth(v, month); });
           var sp = db.visits.filter(function (v) { return v.staffId === s.staffId && visitInMonth(v, prev); });
           var ss = summarize(sm, db.options);
           var ssp = summarize(sp, db.options);
-          ss.vsPrevious = { visitCount: ss.visitCount - ssp.visitCount, orderCount: ss.orderCount - ssp.orderCount, dealCount: ss.dealCount - ssp.dealCount };
+          ss.vsPrevious = { visitCount: ss.visitCount - ssp.visitCount, orderCount: ss.orderCount - ssp.orderCount, dealCount: ss.dealCount - ssp.dealCount, cancelCount: ss.cancelCount - ssp.cancelCount };
           ss.goal = goalView(goalOf(month, s.staffId), ss);
           return { staffId: s.staffId, name: s.name, role: s.role, status: s.status, stats: ss, previous: ssp, goal: ss.goal, sourceCounts: ss.sourceCounts };
         });
@@ -555,11 +582,80 @@
       var mineP = db.visits.filter(function (v) { return v.staffId === sid2 && visitInMonth(v, prev); });
       var st2 = summarize(mine, db.options);
       var pst2 = summarize(mineP, db.options);
-      st2.vsPrevious = { visitCount: st2.visitCount - pst2.visitCount, orderCount: st2.orderCount - pst2.orderCount, dealCount: st2.dealCount - pst2.dealCount };
+      st2.vsPrevious = { visitCount: st2.visitCount - pst2.visitCount, orderCount: st2.orderCount - pst2.orderCount, dealCount: st2.dealCount - pst2.dealCount, cancelCount: st2.cancelCount - pst2.cancelCount };
       var g = goalOf(month, sid2);
       st2.goal = goalView(g, st2);
       var name = (db.staff.filter(function (s) { return s.staffId === sid2; })[0] || {}).name || me.name;
       return { month: month, previousMonth: prev, scope: 'self', staffId: sid2, staffName: name, stats: st2, previous: pst2, sourceCounts: st2.sourceCounts, goal: st2.goal };
+    }
+    /* ---- 收車（模擬） ---- */
+    if (action === 'createBuy' || action === 'updateBuy') {
+      if (!payload.sellerName) throw apiError('請填寫賣方客人姓名。', 'VALIDATION');
+      var bRec;
+      if (action === 'createBuy') {
+        db.seq += 1;
+        var bd = payload.buyDate || todayStr();
+        bRec = { kind: 'buy', buyId: 'P' + bd.replace(/-/g, '') + '-' + String(db.seq).padStart(4, '0'), createdAt: nowStr(), staffId: me.staffId, staffName: me.name };
+        db.buys.unshift(bRec);
+      } else {
+        bRec = db.buys.filter(function (b) { return b.buyId === payload.buyId; })[0];
+        if (!bRec) throw apiError('找不到這筆收車紀錄。', 'NOT_FOUND');
+        if (!isManagerRole(me.role) && bRec.staffId !== me.staffId) throw apiError('只能修改自己的紀錄。', 'FORBIDDEN');
+      }
+      ['buyDate', 'sellerName', 'sellerPhone', 'customerSource', 'carModel', 'carYear', 'heat', 'followStatus', 'nextContactDate', 'note'].forEach(function (k) {
+        if (k in payload) bRec[k] = payload[k] == null ? '' : payload[k];
+      });
+      ['mileage', 'askPrice', 'offerPrice'].forEach(function (k) {
+        if (k in payload) bRec[k] = payload[k] === '' || payload[k] == null ? '' : Number(payload[k]);
+      });
+      ['ordered', 'dealt', 'cancelled'].forEach(function (k) { if (k in payload) bRec[k] = !!payload[k]; });
+      if (!bRec.buyDate) bRec.buyDate = todayStr();
+      bRec.updatedAt = nowStr();
+      return Object.assign({}, bRec);
+    }
+    if (action === 'buyToday') {
+      var bd2 = payload.date || todayStr();
+      var bf = payload.staffId || '';
+      var recs = db.buys.filter(function (b) { return b.buyDate === bd2 && canSee(b, bf); });
+      recs.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
+      var bsum = summarize(recs, db.options);
+      return {
+        date: bd2, kind: 'buy', appraisalCount: recs.length, orderCount: bsum.orderCount, dealCount: bsum.dealCount, cancelCount: bsum.cancelCount,
+        resultCounts: bsum.resultCounts, followCounts: bsum.followCounts, sourceCounts: bsum.sourceCounts,
+        records: recs,
+        followUps: db.buys.filter(function (b) { return b.nextContactDate === bd2 && canSee(b, bf); })
+      };
+    }
+    if (action === 'buyMonth') {
+      var bm = payload.month || monthStr();
+      var bprev = shiftMonth(bm, -1);
+      var bfid = payload.staffId || '';
+      var inM = function (b, ym) { return b.buyDate && b.buyDate.slice(0, 7) === ym; };
+      var bgoal = function (sid) {
+        var gs = db.goals.filter(function (g) { return g.month === bm && (!sid || g.staffId === sid); });
+        if (!gs.length) return null;
+        return gs.reduce(function (a, g) { a.visitGoal += g.buyVisitGoal || 0; a.orderGoal += g.buyOrderGoal || 0; a.dealGoal += g.buyDealGoal || 0; return a; }, { visitGoal: 0, orderGoal: 0, dealGoal: 0 });
+      };
+      var bstat = function (list, plist, goal) {
+        var a = summarize(list, db.options), b = summarize(plist, db.options);
+        a.vsPrevious = { visitCount: a.visitCount - b.visitCount, orderCount: a.orderCount - b.orderCount, dealCount: a.dealCount - b.dealCount, cancelCount: a.cancelCount - b.cancelCount };
+        a.goal = goalView(goal, a);
+        return { st: a, prev: b };
+      };
+      if (isManagerRole(me.role) && !bfid) {
+        var sAll = bstat(db.buys.filter(function (b) { return inM(b, bm); }), db.buys.filter(function (b) { return inM(b, bprev); }), bgoal(''));
+        return {
+          month: bm, previousMonth: bprev, kind: 'buy', scope: 'store', stats: sAll.st, previous: sAll.prev, sourceCounts: sAll.st.sourceCounts, goal: sAll.st.goal,
+          staffTable: db.staff.filter(function (s) { return s.status === '啟用'; }).map(function (s) {
+            var x = bstat(db.buys.filter(function (b) { return b.staffId === s.staffId && inM(b, bm); }), db.buys.filter(function (b) { return b.staffId === s.staffId && inM(b, bprev); }), bgoal(s.staffId));
+            return { staffId: s.staffId, name: s.name, role: s.role, status: s.status, stats: x.st, previous: x.prev, goal: x.st.goal, sourceCounts: x.st.sourceCounts };
+          })
+        };
+      }
+      var bsid = isManagerRole(me.role) ? bfid : me.staffId;
+      var sOne = bstat(db.buys.filter(function (b) { return b.staffId === bsid && inM(b, bm); }), db.buys.filter(function (b) { return b.staffId === bsid && inM(b, bprev); }), bgoal(bsid));
+      var bname = (db.staff.filter(function (s) { return s.staffId === bsid; })[0] || {}).name || me.name;
+      return { month: bm, previousMonth: bprev, kind: 'buy', scope: 'self', staffId: bsid, staffName: bname, stats: sOne.st, previous: sOne.prev, sourceCounts: sOne.st.sourceCounts, goal: sOne.st.goal };
     }
     throw apiError('未知的操作。', 'UNKNOWN_ACTION');
   }
@@ -1060,6 +1156,74 @@
     return out;
   }
 
+  /* ---------- v3：下訂／成交／退訂（可同時勾）＋追蹤狀態 ----------
+   * 新後端回傳 ordered／dealt／cancelled／followStatus；舊後端只有 result，這裡換算，畫面兩種都能用。 */
+  var FOLLOW_STATES = ['再約', '考慮中', '未成交'];
+  function flagsOf(v) {
+    v = v || {};
+    if ('ordered' in v || 'dealt' in v || 'cancelled' in v || 'followStatus' in v) {
+      return { ordered: !!v.ordered, dealt: !!v.dealt, cancelled: !!v.cancelled, followStatus: v.followStatus || '' };
+    }
+    var r = String(v.result || '').trim();
+    return {
+      ordered: r === '下訂', dealt: r === '成交', cancelled: r === '退訂',
+      followStatus: FOLLOW_STATES.indexOf(r) > -1 ? r : ''
+    };
+  }
+  /** 勾選的項目，例如 ['下訂', '成交'] */
+  function flagList(v) {
+    var f = flagsOf(v), out = [];
+    if (f.ordered) out.push('下訂');
+    if (f.dealt) out.push('成交');
+    if (f.cancelled) out.push('退訂');
+    return out;
+  }
+  /** 一行文字：「下訂、成交」或追蹤狀態 */
+  function resultText(v) {
+    var a = flagList(v);
+    var f = flagsOf(v);
+    if (a.length) return a.join('、') + (f.followStatus ? '（' + f.followStatus + '）' : '');
+    return f.followStatus || '';
+  }
+  /** 舊後端（還沒重新部署）只認得單一「結果」：送出時一起附上，讓舊後端也能存 */
+  function legacyResult(f) {
+    if (f.dealt) return '成交';
+    if (f.ordered) return '下訂';
+    return f.followStatus || '考慮中';
+  }
+
+  /** 讀網址參數：LIFF 第一次開啟時參數包在 liff.state 裡，兩種都要認得 */
+  function qp(name) {
+    var v = params.get(name);
+    if (v != null && v !== '') return v;
+    var stt = params.get('liff.state') || '';
+    if (!stt) return '';
+    try { stt = decodeURIComponent(stt); } catch (e) {}
+    var m = stt.match(new RegExp('(?:^|[?&#])' + name + '=([^&#]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  /** 賣車／收車：?mode=buy 或 ?view=buy 開啟收車 */
+  function initialKind() {
+    return (qp('mode') === 'buy' || qp('view') === 'buy') ? 'buy' : 'sell';
+  }
+  /** 後端還沒重新部署、不認得收車功能 */
+  function isUpdatingError(err) {
+    return !!err && (err.code === 'UNKNOWN_ACTION' || /未知的操作|不能合併/.test(String(err.message || '')));
+  }
+  function updatingCard() {
+    return el('div', { class: 'card updating' },
+      svg(ICO.alert, 'screen-ico ico'),
+      el('h2', { text: '系統更新中，請稍後' }),
+      el('p', { text: '收車功能正在更新，更新完成後就能使用。賣車的功能不受影響。' })
+    );
+  }
+  function kindSwitch(kind, onChange) {
+    function b(k, label) {
+      return el('button', { class: 'tab' + (kind === k ? ' is-on' : ''), type: 'button', text: label, onclick: function () { if (kind !== k) onChange(k); } });
+    }
+    return el('div', { class: 'tabs kind-switch', role: 'tablist' }, b('sell', '賣車'), b('buy', '收車'));
+  }
+
   var HEAT_LABEL = { A: 'A（熱）', B: 'B（溫）', C: 'C（冷）', D: 'D（無效）' };
   // 回報表單選熱度時顯示的說明（試算表存的仍是 A/B/C/D）
   var HEAT_INFO = {
@@ -1168,7 +1332,8 @@
       ['車牌', rec.carPlate],
       ['客戶來源', sourceDisplay(rec)],
       ['客戶熱度', rec.heat ? heatLabel(rec.heat) : ''],
-      ['結果', rec.result],
+      ['結果', flagList(rec).join('、')],
+      ['追蹤狀態', flagsOf(rec).followStatus],
       ['下次聯絡日', rec.nextContactDate]
     ];
     rows.forEach(function (r) {
@@ -1187,7 +1352,8 @@
       flexRow('售價', rec.carPrice !== '' && rec.carPrice != null ? rec.carPrice + ' 萬' : ''),
       flexRow('客戶來源', sourceDisplay(rec)),
       flexRow('客戶熱度', rec.heat ? heatLabel(rec.heat) : ''),
-      flexRow('結果', rec.result),
+      flexRow('結果', flagList(rec).join('、')),
+      flexRow('追蹤狀態', flagsOf(rec).followStatus),
       flexRow('下次聯絡日', rec.nextContactDate)
     ].filter(Boolean);
     if (!rows.length) {
@@ -1455,7 +1621,7 @@
           type: 'box', layout: 'vertical', flex: 3,
           contents: [
             { type: 'text', text: heat ? heatLabel(heat) : '—', size: 'xs', weight: 'bold', color: HEAT_COLOR[heat] || '#CCCCCC', align: 'end' },
-            { type: 'text', text: clipText(v.result || '—', 6), size: 'xxs', color: '#DDDDDD', align: 'end' }
+            { type: 'text', text: clipText(resultText(v) || '—', 10), size: 'xxs', color: '#DDDDDD', align: 'end' }
           ]
         }
       ]
@@ -1468,11 +1634,13 @@
       return v && v.visitDate === date && (!me || !me.staffId || v.staffId === me.staffId);
     }).slice().sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
     var heatN = { A: 0, B: 0, C: 0, D: 0 };
-    var orders = 0;
+    var orders = 0, deals = 0;
     list.forEach(function (v) {
       var h = String(v.heat || '').trim();
       if (h in heatN) heatN[h] += 1;
-      if (String(v.result || '').trim() === '下訂') orders += 1;
+      var f = flagsOf(v);
+      if (f.ordered) orders += 1;
+      if (f.dealt) deals += 1;
     });
     var rows = list.slice(0, OVERVIEW_MAX_ROWS).map(function (v) { return overviewRow(v, v.visitId === newId); });
     if (list.length > OVERVIEW_MAX_ROWS) {
@@ -1482,7 +1650,7 @@
     var body = [
       {
         type: 'box', layout: 'horizontal', spacing: 'sm',
-        contents: [overviewStat('今日帶看', list.length), overviewStat('下訂', orders, '#FF5A66')]
+        contents: [overviewStat('今日帶看', list.length), overviewStat('下訂', orders, '#FF5A66'), overviewStat('成交', deals, '#FF5A66')]
       },
       {
         type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
@@ -1519,6 +1687,47 @@
       altText: clipText('今日回報總覽：' + list.length + ' 筆（下訂 ' + orders + '）', 400),
       contents: bubble
     };
+  }
+
+  /* ---------- 收車紀錄卡（不放「我們出價」，出價只留在系統裡） ---------- */
+  function buyTitle(isUpdate) { return isUpdate ? '✅ 已更新收車' : '✅ 已回報收車'; }
+  function buyRows(rec) {
+    return [
+      ['賣方客人', rec.sellerName],
+      ['車款', rec.carModel],
+      ['年份', rec.carYear],
+      ['里程', rec.mileage !== '' && rec.mileage != null ? rec.mileage + ' 萬公里' : ''],
+      ['客人開價', rec.askPrice !== '' && rec.askPrice != null ? rec.askPrice + ' 萬' : ''],
+      ['客戶來源', sourceDisplay(rec)],
+      ['熱度', rec.heat ? heatLabel(rec.heat) : ''],
+      ['結果', ['估車'].concat(flagList(rec)).join('、')],
+      ['追蹤狀態', flagsOf(rec).followStatus],
+      ['下次聯絡日', rec.nextContactDate]
+    ];
+  }
+  function buyPlainText(rec, isUpdate) {
+    rec = rec || {};
+    var lines = [buyTitle(isUpdate)];
+    buyRows(rec).forEach(function (r) { if (r[1] && String(r[1]).trim()) lines.push(r[0] + '：' + String(r[1]).trim()); });
+    if (rec.buyId) lines.push('紀錄編號：' + rec.buyId);
+    return clipRaw(lines.join('\n'), 5000);
+  }
+  function buyFlexMessage(rec, isUpdate) {
+    rec = rec || {};
+    var rows = buyRows(rec).map(function (r) { return flexRow(r[0], r[1]); }).filter(Boolean);
+    if (rec.buyId) {
+      rows.push({ type: 'separator', color: '#333333', margin: 'md' });
+      rows.push({ type: 'text', text: '紀錄編號　' + rec.buyId, size: 'xxs', color: '#888888', margin: 'md', wrap: true });
+    }
+    var bits = [rec.sellerName, rec.carModel].filter(function (x) { return x && String(x).trim(); });
+    return {
+      type: 'flex',
+      altText: clipText((isUpdate ? '已更新收車' : '已回報收車') + (bits.length ? '：' + bits.join(' ') : ''), 400),
+      contents: flexBubble(buyTitle(isUpdate), rows)
+    };
+  }
+  async function postBuyToChat(rec, isUpdate) {
+    return postChatRecord(packMessages(buyFlexMessage(rec, isUpdate), buyPlainText(rec, isUpdate)));
   }
 
   async function postDailyNoteToChat(rec) {
@@ -1563,6 +1772,18 @@
     mergeSourceCounts: mergeSourceCounts,
     heatLabel: heatLabel,
     visitFlexMessage: visitFlexMessage,
-    noteFlexMessage: noteFlexMessage
+    noteFlexMessage: noteFlexMessage,
+    buyFlexMessage: buyFlexMessage,
+    postBuyToChat: postBuyToChat,
+    flagsOf: flagsOf,
+    flagList: flagList,
+    resultText: resultText,
+    legacyResult: legacyResult,
+    FOLLOW_STATES: FOLLOW_STATES,
+    qp: qp,
+    initialKind: initialKind,
+    isUpdatingError: isUpdatingError,
+    updatingCard: updatingCard,
+    kindSwitch: kindSwitch
   };
 })(window);

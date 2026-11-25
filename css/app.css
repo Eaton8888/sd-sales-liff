@@ -960,3 +960,54 @@ img, svg { display: block; }
 }
 .help-car-spec b { display: block; font-size: 11px; }
 .help-car-spec span { font-size: 9px; color: var(--dim); }
+
+/* ===== v3：下訂／成交／退訂勾選、賣車／收車切換 ===== */
+.stats-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.stats-4 .stat { padding: 12px 4px 10px; }
+.stats-4 .stat-num { font-size: 24px; }
+.stats-4 .stat-vs { font-size: 10px; letter-spacing: 0; }
+.checks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  -webkit-tap-highlight-color: transparent;
+}
+.check .box {
+  width: 18px; height: 18px; border-radius: 4px;
+  border: 1.5px solid var(--muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; line-height: 1; color: #fff;
+}
+.check.is-on { border-color: var(--accent); background: rgba(215,25,42,.18); box-shadow: inset 0 0 0 1px var(--accent); color: #fff; }
+.check.is-on .box { background: var(--accent); border-color: var(--accent); }
+.check.c-cancel.is-on { border-color: #8a8a90; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px #8a8a90; }
+.check.c-cancel.is-on .box { background: #8a8a90; border-color: #8a8a90; }
+.check-hint { margin: 8px 0 0; font-size: 12px; color: var(--dim); line-height: 1.5; }
+.badge-result-退訂 { color: var(--dim); border-style: dashed; }
+.kind-switch { margin: 12px 0 4px; }
+.kind-switch .tab { font-size: 15px; }
+.staff-row.r7 { grid-template-columns: 1fr 34px 34px 34px 34px 48px 14px; }
+.updating { text-align: center; padding: 28px 18px; }
+.updating h2 { margin: 0 0 8px; font-size: 18px; }
+.updating p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.price-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.price-pair .field { margin-bottom: 0; }
+.internal-tag { margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--accent-soft); border: 1px solid var(--accent-soft); border-radius: 3px; padding: 0 4px; }
