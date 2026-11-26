@@ -1745,7 +1745,7 @@
     return {
       type: 'flex',
       altText: clipText((isUpdate ? '已更新收車' : '已回報收車') + (bits.length ? '：' + bits.join(' ') : ''), 400),
-      contents: flexBubble(buyTitle(isUpdate), rows, '#D4A64A')
+      contents: flexBubble(buyTitle(isUpdate), rows, '#1A6B45')
     };
   }
   async function postBuyToChat(rec, isUpdate) {

@@ -26,16 +26,16 @@
   --font: "Noto Sans TC", "Noto Sans CJK TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif;
 }
 
-/* 收車（買車）介面：沿用上達黑底，改用暖金點綴，與賣車的紅做區分 */
+/* 收車（買車）介面：沿用上達黑底，改用墨綠點綴，呼應付現收購，與賣車的紅做區分 */
 html.kind-buy,
 html.kind-buy body,
 body.kind-buy,
 .kind-buy {
-  --accent: #D4A64A;
-  --accent-2: #E0B45C;
-  --accent-soft: #E8C97A;
-  --accent-rgb: 212, 166, 74;
-  --accent-on: #1A1408;
+  --accent: #1A6B45;
+  --accent-2: #228556;
+  --accent-soft: #73C49A;
+  --accent-rgb: 26, 107, 69;
+  --accent-on: #ffffff;
 
 }
 
@@ -1023,8 +1023,8 @@ img, svg { display: block; }
 /* 賣車分頁永遠是上達紅，收車／買車分頁永遠是暖金，不跟頁面主題對調 */
 .tab.tab-sell { color: #e56b75; }
 .tab.tab-sell.is-on { background: #d7192a; color: #fff; }
-.tab.tab-buy { color: #E8C97A; }
-.tab.tab-buy.is-on { background: #D4A64A; color: #1A1408; }
+.tab.tab-buy { color: #73C49A; }
+.tab.tab-buy.is-on { background: #1A6B45; color: #fff; }
 .staff-row.r7 { grid-template-columns: 1fr 34px 34px 34px 34px 48px 14px; }
 .updating { text-align: center; padding: 28px 18px; }
 .updating h2 { margin: 0 0 8px; font-size: 18px; }
