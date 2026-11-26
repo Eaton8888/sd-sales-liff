@@ -26,15 +26,15 @@
   --font: "Noto Sans TC", "Noto Sans CJK TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif;
 }
 
-/* 收車（買車）介面：沿用上達黑底，改用墨綠點綴，呼應付現收購，與賣車的紅做區分 */
+/* 收車（買車）介面：沿用上達黑底，改用保時捷 Mamba Green（曼巴綠，約 #52B844）衍生色，呼應付現收購，與賣車的紅做區分 */
 html.kind-buy,
 html.kind-buy body,
 body.kind-buy,
 .kind-buy {
-  --accent: #1A6B45;
-  --accent-2: #228556;
-  --accent-soft: #73C49A;
-  --accent-rgb: 26, 107, 69;
+  --accent: #2D7A34;
+  --accent-2: #318539;
+  --accent-soft: #52B844;
+  --accent-rgb: 45, 122, 52;
   --accent-on: #ffffff;
 
 }
@@ -1020,11 +1020,11 @@ img, svg { display: block; }
 .kind-switch { margin: 12px 0 4px; }
 .kind-switch .tab { font-size: 16px; min-height: 48px; font-weight: 700; }
 
-/* 賣車分頁永遠是上達紅，收車／買車分頁永遠是暖金，不跟頁面主題對調 */
+/* 賣車分頁永遠是上達紅，收車／買車分頁永遠是 Mamba Green，不跟頁面主題對調 */
 .tab.tab-sell { color: #e56b75; }
 .tab.tab-sell.is-on { background: #d7192a; color: #fff; }
-.tab.tab-buy { color: #73C49A; }
-.tab.tab-buy.is-on { background: #1A6B45; color: #fff; }
+.tab.tab-buy { color: #52B844; }
+.tab.tab-buy.is-on { background: #2D7A34; color: #fff; }
 .staff-row.r7 { grid-template-columns: 1fr 34px 34px 34px 34px 48px 14px; }
 .updating { text-align: center; padding: 28px 18px; }
 .updating h2 { margin: 0 0 8px; font-size: 18px; }
