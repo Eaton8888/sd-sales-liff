@@ -229,13 +229,12 @@
     function carCard(car, actions) {
       var mgr = null;
       var showFloor = canSeeFloor && !!car.floorText;
-      var showMgrMeta = isMgr && (car.days != null || car.inDate || car.keys === true || car.inspectRemind || car.inspectNote);
+      var showMgrMeta = isMgr && (car.days != null || car.inDate || car.inspectRemind || car.inspectNote);
       if (showFloor || showMgrMeta) {
         mgr = el('div', { class: 'car-mgr' },
           showFloor ? el('div', {}, '底價 ', el('b', { text: floorLabel(car) }), '（內部可見，勿轉傳客戶）') : null,
           showMgrMeta ? el('div', {}, '在庫 ', el('b', { class: car.days >= 90 ? 'days-hot' : '', text: (car.days == null ? '—' : car.days) + ' 天' }),
-            car.inDate ? '　入庫 ' + car.inDate : '',
-            car.keys === true ? '　有備鑰' : '') : null,
+            car.inDate ? '　入庫 ' + car.inDate : '') : null,
           (isMgr && (car.inspectRemind || car.inspectNote)) ? el('div', { text: '驗車：' + [car.inspectRemind, car.inspectNote].filter(Boolean).join('｜') }) : null
         );
       }
@@ -243,6 +242,7 @@
       if (car.original) tags.push('原鈑');
       if (car.cert) tags.push('認證');
       if (car.factoryCert) tags.push('廠證');
+      if (isMgr && car.keys === true) tags.push('備鑰');
       return el('article', { class: 'visit car' },
         el('div', { class: 'car-head' },
           el('div', {},
